@@ -1,22 +1,21 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import type {
-  ExchangeState,
-  SymbolState,
-  OrderBook,
-  Position,
-  WsConnection,
-  ExchangeMarketStats,
-} from '../../lib/types'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  LIGHTER_WS_URL,
-  EXCHANGES,
   getExchangeByAbbr,
+  LIGHTER_WS_URL
 } from '../../lib/config'
 import {
-  SYMBOL_MARKET_ID_MAP,
-  MARKET_ID_TO_SYMBOL,
   ALL_SYMBOLS_DATA,
+  MARKET_ID_TO_SYMBOL,
+  SYMBOL_MARKET_ID_MAP,
 } from '../../lib/symbols'
+import type {
+  ExchangeMarketStats,
+  ExchangeState,
+  OrderBook,
+  Position,
+  SymbolState,
+  WsConnection,
+} from '../../lib/types'
 
 const INITIAL_EXCHANGES: ExchangeState[] = [
   {
@@ -48,7 +47,7 @@ function extractSymbolFromUrl(url: string): string | null {
     if (pathParts.length > 0) {
       return pathParts[pathParts.length - 1].toUpperCase()
     }
-  } catch {}
+  } catch { }
   return null
 }
 

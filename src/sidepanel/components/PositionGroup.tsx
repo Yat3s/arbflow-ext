@@ -1,6 +1,24 @@
-import { useState } from 'react'
-import type { SymbolState, Position, ExchangeMarketStats, PriceDiff } from '../../lib/types'
+import { useEffect, useRef, useState } from 'react'
+import type { ExchangeMarketStats, Position, PriceDiff, SymbolState } from '../../lib/types'
 import { SpreadRow } from './SpreadRow'
+
+interface MonitorState {
+  condition: '>' | '<'
+  threshold: string
+  isMonitoring: boolean
+}
+
+interface TradeLog {
+  id: number
+  timestamp: Date
+  message: string
+}
+
+interface SimulatedPositions {
+  [exchangeId: string]: number
+}
+
+const DEFAULT_TRADE_INTERVAL = 500
 
 interface PositionGroupProps {
   symbol: string
@@ -20,7 +38,7 @@ function formatUpdateTime(timestamp?: number): string {
 
 function calculatePriceDiff(
   stats: ExchangeMarketStats[],
-  exchanges: { id: string; name: string; color: string }[]
+  exchanges: { id: string; name: string; color: string }[],
 ): PriceDiff | null {
   if (stats.length < 2) return null
 
@@ -66,10 +84,7 @@ function PositionItem({ pos, exchange }: { pos: Position; exchange?: { color: st
   return (
     <div className="flex items-center justify-between rounded bg-muted/50 p-2 text-xs">
       <div className="flex items-center gap-2">
-        <span
-          className="rounded px-1.5 py-0.5 text-white"
-          style={{ backgroundColor: color }}
-        >
+        <span className="rounded px-1.5 py-0.5 text-white" style={{ backgroundColor: color }}>
           {pos.exchangeId}
         </span>
         <span className={`text-muted-foreground ${isStale ? 'opacity-50' : ''}`}>
@@ -90,8 +105,7 @@ function PositionItem({ pos, exchange }: { pos: Position; exchange?: { color: st
           </span>
         </div>
         <div className="text-muted-foreground">
-          入场 {pos.avgEntryPrice.toFixed(2)} / 现价 {pos.markPrice.toFixed(2)} / fnd{' '}
-          {fundingSign}
+          入场 {pos.avgEntryPrice.toFixed(2)} / 现价 {pos.markPrice.toFixed(2)} / fnd {fundingSign}
           {Math.abs(funding).toFixed(2)}
         </div>
       </div>
@@ -118,6 +132,24 @@ export function PositionGroup({
   onExecuteArbitrage,
 }: PositionGroupProps) {
   const [tradeSize, setTradeSize] = useState('0.01')
+  const [positionMin, setPositionMin] = useState('-0.1')
+  const [positionMax, setPositionMax] = useState('0.1')
+  const [monitor2to1, setMonitor2to1] = useState<MonitorState>({
+    condition: '>',
+    threshold: '0.01',
+    isMonitoring: false,
+  })
+  const [monitor1to2, setMonitor1to2] = useState<MonitorState>({
+    condition: '>',
+    threshold: '0.01',
+    isMonitoring: false,
+  })
+  const [tradeLogs, setTradeLogs] = useState<TradeLog[]>([])
+  const [simulatedPositions, setSimulatedPositions] = useState<SimulatedPositions>({})
+  const [simulatedProfit, setSimulatedProfit] = useState(0)
+  const lastTradeTimeRef = useRef<{ '2to1': number; '1to2': number }>({ '2to1': 0, '1to2': 0 })
+  const logIdRef = useRef(0)
+
   const positions = symbolState?.positions?.filter((p) => p.position !== 0) || []
   const stats = symbolState?.exchangeMarketStats || []
   const hasPositions = positions.length > 0
@@ -125,10 +157,7 @@ export function PositionGroup({
   const sortedStats = [...stats].sort((a, b) => a.exchangeId.localeCompare(b.exchangeId))
   const priceDiff = calculatePriceDiff(sortedStats, exchanges)
 
-  const totalPnl = positions.reduce(
-    (sum, p) => sum + (p.unrealizedPnl || 0) + (p.funding || 0),
-    0
-  )
+  const totalPnl = positions.reduce((sum, p) => sum + (p.unrealizedPnl || 0) + (p.funding || 0), 0)
 
   const netPosition = positions.reduce((sum, p) => {
     const size = p.position || 0
@@ -144,6 +173,97 @@ export function PositionGroup({
     }
     onExecuteArbitrage(symbol, direction, size)
   }
+
+  const addTradeLog = (message: string) => {
+    logIdRef.current += 1
+    setTradeLogs((prev) => [
+      { id: logIdRef.current, timestamp: new Date(), message },
+      ...prev.slice(0, 49),
+    ])
+  }
+
+  useEffect(() => {
+    if (!priceDiff) return
+
+    const now = Date.now()
+    const size = parseFloat(tradeSize) || 0
+    const minPos = parseFloat(positionMin) || 0
+    const maxPos = parseFloat(positionMax) || 0
+    const currentPlatform1Pos = simulatedPositions[priceDiff.platform1Id] || 0
+
+    if (monitor2to1.isMonitoring && size > 0) {
+      const percentage = (priceDiff.spread2to1 / priceDiff.platform2Ask) * 100
+      const threshold = parseFloat(monitor2to1.threshold) || 0
+      const conditionMet =
+        monitor2to1.condition === '>' ? percentage > threshold : percentage < threshold
+
+      const newPlatform1Pos = currentPlatform1Pos - size
+      const withinLimits = newPlatform1Pos >= minPos && newPlatform1Pos <= maxPos
+
+      if (conditionMet && now - lastTradeTimeRef.current['2to1'] >= DEFAULT_TRADE_INTERVAL) {
+        lastTradeTimeRef.current['2to1'] = now
+        if (withinLimits) {
+          const sellPrice = priceDiff.platform1Bid
+          const buyPrice = priceDiff.platform2Ask
+          const profit = size * sellPrice - size * buyPrice
+          setSimulatedProfit((prev) => prev + profit)
+          setSimulatedPositions((prev) => ({
+            ...prev,
+            [priceDiff.platform1Id]: (prev[priceDiff.platform1Id] || 0) - size,
+            [priceDiff.platform2Id]: (prev[priceDiff.platform2Id] || 0) + size,
+          }))
+          addTradeLog(
+            `[模拟] 在 ${priceDiff.platform1Id} 卖出 ${size} ${symbol}(${sellPrice.toFixed(2)}), 在 ${priceDiff.platform2Id} 买入 ${size} ${symbol}(${buyPrice.toFixed(2)}), 收益 ${profit >= 0 ? '+' : ''}${profit.toFixed(2)}U`,
+          )
+        } else {
+          addTradeLog(
+            `[跳过] 超出持仓限制: ${priceDiff.platform1Id} 当前=${currentPlatform1Pos.toFixed(4)}, 交易后=${newPlatform1Pos.toFixed(4)}, 限制=[${minPos}, ${maxPos}]`,
+          )
+        }
+      }
+    }
+
+    if (monitor1to2.isMonitoring && size > 0) {
+      const percentage = (priceDiff.spread1to2 / priceDiff.platform1Ask) * 100
+      const threshold = parseFloat(monitor1to2.threshold) || 0
+      const conditionMet =
+        monitor1to2.condition === '>' ? percentage > threshold : percentage < threshold
+
+      const newPlatform1Pos = currentPlatform1Pos + size
+      const withinLimits = newPlatform1Pos >= minPos && newPlatform1Pos <= maxPos
+
+      if (conditionMet && now - lastTradeTimeRef.current['1to2'] >= DEFAULT_TRADE_INTERVAL) {
+        lastTradeTimeRef.current['1to2'] = now
+        if (withinLimits) {
+          const sellPrice = priceDiff.platform2Bid
+          const buyPrice = priceDiff.platform1Ask
+          const profit = size * sellPrice - size * buyPrice
+          setSimulatedProfit((prev) => prev + profit)
+          setSimulatedPositions((prev) => ({
+            ...prev,
+            [priceDiff.platform2Id]: (prev[priceDiff.platform2Id] || 0) - size,
+            [priceDiff.platform1Id]: (prev[priceDiff.platform1Id] || 0) + size,
+          }))
+          addTradeLog(
+            `[模拟] 在 ${priceDiff.platform2Id} 卖出 ${size} ${symbol}(${sellPrice.toFixed(2)}), 在 ${priceDiff.platform1Id} 买入 ${size} ${symbol}(${buyPrice.toFixed(2)}), 收益 ${profit >= 0 ? '+' : ''}${profit.toFixed(2)}U`,
+          )
+        } else {
+          addTradeLog(
+            `[跳过] 超出持仓限制: ${priceDiff.platform1Id} 当前=${currentPlatform1Pos.toFixed(4)}, 交易后=${newPlatform1Pos.toFixed(4)}, 限制=[${minPos}, ${maxPos}]`,
+          )
+        }
+      }
+    }
+  }, [
+    priceDiff,
+    monitor2to1,
+    monitor1to2,
+    tradeSize,
+    symbol,
+    positionMin,
+    positionMax,
+    simulatedPositions,
+  ])
 
   return (
     <div className={`rounded-lg border p-3 ${hasPositions ? 'border-border' : 'border-muted'}`}>
@@ -182,7 +302,7 @@ export function PositionGroup({
 
       {priceDiff && (
         <div className="mt-3 space-y-2">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label className="text-xs text-muted-foreground">执行数量:</label>
             <input
               type="number"
@@ -190,7 +310,25 @@ export function PositionGroup({
               onChange={(e) => setTradeSize(e.target.value)}
               step="0.01"
               min="0"
-              className="w-24 rounded border bg-background px-2 py-1 text-xs"
+              className="w-20 rounded border bg-background px-2 py-1 text-xs"
+            />
+            <span className="text-xs text-muted-foreground">{priceDiff.platform1Id}持仓:</span>
+            <input
+              type="number"
+              value={positionMin}
+              onChange={(e) => setPositionMin(e.target.value)}
+              step="0.01"
+              className="w-20 rounded border bg-background px-2 py-1 text-xs"
+              placeholder="最小"
+            />
+            <span className="text-xs text-muted-foreground">~</span>
+            <input
+              type="number"
+              value={positionMax}
+              onChange={(e) => setPositionMax(e.target.value)}
+              step="0.01"
+              className="w-20 rounded border bg-background px-2 py-1 text-xs"
+              placeholder="最大"
             />
           </div>
           <SpreadRow
@@ -198,13 +336,106 @@ export function PositionGroup({
             spread={priceDiff.spread2to1}
             refPrice={priceDiff.platform2Ask}
             onExecute={() => handleExecute('2to1')}
+            monitorCondition={monitor2to1.condition}
+            monitorThreshold={monitor2to1.threshold}
+            isMonitoring={monitor2to1.isMonitoring}
+            onMonitorConditionToggle={() =>
+              setMonitor2to1((prev) => ({
+                ...prev,
+                condition: prev.condition === '>' ? '<' : '>',
+              }))
+            }
+            onMonitorThresholdChange={(value) =>
+              setMonitor2to1((prev) => ({ ...prev, threshold: value }))
+            }
+            onMonitorToggle={() =>
+              setMonitor2to1((prev) => ({ ...prev, isMonitoring: !prev.isMonitoring }))
+            }
           />
           <SpreadRow
             label={`-${priceDiff.platform2Id}+${priceDiff.platform1Id}`}
             spread={priceDiff.spread1to2}
             refPrice={priceDiff.platform1Ask}
             onExecute={() => handleExecute('1to2')}
+            monitorCondition={monitor1to2.condition}
+            monitorThreshold={monitor1to2.threshold}
+            isMonitoring={monitor1to2.isMonitoring}
+            onMonitorConditionToggle={() =>
+              setMonitor1to2((prev) => ({
+                ...prev,
+                condition: prev.condition === '>' ? '<' : '>',
+              }))
+            }
+            onMonitorThresholdChange={(value) =>
+              setMonitor1to2((prev) => ({ ...prev, threshold: value }))
+            }
+            onMonitorToggle={() =>
+              setMonitor1to2((prev) => ({ ...prev, isMonitoring: !prev.isMonitoring }))
+            }
           />
+
+          {(Object.keys(simulatedPositions).length > 0 || simulatedProfit !== 0) && (
+            <div className="mt-2 flex items-center gap-3 rounded border border-border bg-muted/30 px-2 py-1.5">
+              <span className="text-xs font-medium text-muted-foreground">模拟持仓:</span>
+              {Object.entries(simulatedPositions).map(([exchangeId, position]) => {
+                const exchange = exchanges.find((e) => e.id === exchangeId)
+                return (
+                  <div key={exchangeId} className="flex items-center gap-1 text-xs">
+                    <span
+                      className="rounded px-1 py-0.5 text-white"
+                      style={{ backgroundColor: exchange?.color || '#6366f1' }}
+                    >
+                      {exchangeId}
+                    </span>
+                    <span className={position >= 0 ? 'text-green-500' : 'text-red-500'}>
+                      {position >= 0 ? '+' : ''}
+                      {position.toFixed(4)}
+                    </span>
+                  </div>
+                )
+              })}
+              <div className="flex items-center gap-1 text-xs">
+                <span className="text-muted-foreground">收益:</span>
+                <span className={simulatedProfit >= 0 ? 'text-green-500' : 'text-red-500'}>
+                  {simulatedProfit >= 0 ? '+' : ''}
+                  {simulatedProfit.toFixed(2)}U
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setSimulatedPositions({})
+                  setSimulatedProfit(0)
+                }}
+                className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+              >
+                重置
+              </button>
+            </div>
+          )}
+
+          {tradeLogs.length > 0 && (
+            <div className="mt-2 max-h-32 overflow-y-auto rounded border border-border bg-muted/30 p-2">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">模拟交易日志</span>
+                <button
+                  onClick={() => setTradeLogs([])}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  清空
+                </button>
+              </div>
+              <div className="space-y-0.5">
+                {tradeLogs.map((log) => (
+                  <div key={log.id} className="text-xs text-muted-foreground">
+                    <span className="text-foreground/60">
+                      [{log.timestamp.toLocaleTimeString()}]
+                    </span>{' '}
+                    {log.message}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -126,13 +126,30 @@ declare global {
 let globalWasmInitialized = false
 let globalWasmInitPromise: Promise<void> | null = null
 
+function loadWasmExecScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof window.Go !== 'undefined') {
+      resolve()
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = chrome.runtime.getURL('wasm_exec.js')
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('Failed to load wasm_exec.js'))
+    document.head.appendChild(script)
+  })
+}
+
 async function initializeGlobalWasm(): Promise<void> {
   if (globalWasmInitialized) return
   if (globalWasmInitPromise) return globalWasmInitPromise
 
   globalWasmInitPromise = (async () => {
+    await loadWasmExecScript()
+
     if (typeof window.Go === 'undefined') {
-      throw new Error('wasm_exec.js not loaded. Please include it before lighter-api.ts')
+      throw new Error('wasm_exec.js loaded but Go is not defined')
     }
 
     const go = new window.Go()
