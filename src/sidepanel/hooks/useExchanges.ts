@@ -1,21 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  getExchangeByAbbr,
-  LIGHTER_WS_URL
-} from '../../lib/config'
+import { EXCHANGES } from '../../lib/config'
+import { decodeMsgpack } from '../../lib/msgpack'
+import { parseMessage } from '../../lib/parsers'
 import {
   ALL_SYMBOLS_DATA,
   MARKET_ID_TO_SYMBOL,
   SYMBOL_MARKET_ID_MAP,
 } from '../../lib/symbols'
 import type {
+  ExchangeConfig,
   ExchangeMarketStats,
   ExchangeState,
   OrderBook,
   Position,
+  SymbolData,
   SymbolState,
-  WsConnection,
 } from '../../lib/types'
+
+interface DirectWsConnection {
+  ws: WebSocket
+  exchangeId: string
+  symbol?: string
+  symbols?: string[]
+  marketId?: number
+  pingInterval?: ReturnType<typeof setInterval>
+}
 
 const INITIAL_EXCHANGES: ExchangeState[] = [
   {
@@ -88,8 +97,7 @@ const EXCHANGE_SHOULD_MERGE_ORDERBOOK: Record<string, boolean> = {
 export function useExchanges(watchedSymbols: string[]) {
   const [exchanges, setExchanges] = useState<ExchangeState[]>(INITIAL_EXCHANGES)
   const [symbolStates, setSymbolStates] = useState<SymbolState[]>([])
-  const lighterWsConnections = useRef<Map<string, WsConnection>>(new Map())
-  const omniWsConnections = useRef<Map<string, WsConnection>>(new Map())
+  const wsConnections = useRef<Map<string, DirectWsConnection>>(new Map())
 
   const getExchangeById = useCallback(
     (id: string) => exchanges.find((ex) => ex.id === id),
@@ -205,12 +213,6 @@ export function useExchanges(watchedSymbols: string[]) {
     []
   )
 
-  const setExchangeWsConnected = useCallback((exchangeId: string, connected: boolean) => {
-    setExchanges((prev) =>
-      prev.map((ex) => (ex.id === exchangeId ? { ...ex, wsConnected: connected } : ex))
-    )
-  }, [])
-
   const scanOpenExchanges = useCallback(async () => {
     const newExchanges = [...INITIAL_EXCHANGES]
 
@@ -228,167 +230,141 @@ export function useExchanges(watchedSymbols: string[]) {
     return newExchanges
   }, [])
 
-  const getAnyActiveTabId = useCallback(() => {
-    const lighterEx = exchanges.find((ex) => ex.id === 'LG')
-    if (lighterEx?.tabId) return lighterEx.tabId
-    const omniEx = exchanges.find((ex) => ex.id === 'OM')
-    if (omniEx?.tabId) return omniEx.tabId
-    return null
-  }, [exchanges])
+  const createWsConnection = useCallback((
+    exchange: ExchangeConfig,
+    symbolsData: SymbolData[],
+    wsId: string,
+    symbol?: string,
+    marketId?: number
+  ) => {
+    const { orderBookConfig } = exchange
+    const abbr = exchange.abbreviation
 
-  const connectAllLighterWs = useCallback(async () => {
-    const lighterEx = exchanges.find((ex) => ex.id === 'LG')
-    if (!lighterEx?.tabId) {
-      console.log('[Arbflow] Cannot connect: Lighter tab not found')
-      return
-    }
+    console.log(`[Arbflow] Connecting ${exchange.name} WebSocket${symbol ? ` for ${symbol}` : ''}`)
 
-    for (const symbol of watchedSymbols) {
-      const marketId = SYMBOL_MARKET_ID_MAP[symbol]
-      if (marketId === undefined) continue
-
-      const wsId = `lighter-${symbol}`
-      if (lighterWsConnections.current.has(wsId)) continue
-
-      console.log(`[Arbflow] Connecting WebSocket for ${symbol} (marketId: ${marketId})`)
-
-      try {
-        await chrome.tabs.sendMessage(lighterEx.tabId, {
-          type: 'WS_COMMAND',
-          command: 'connect',
-          url: LIGHTER_WS_URL,
-          options: { id: wsId, symbol, marketId },
-        })
-        lighterWsConnections.current.set(wsId, { symbol, marketId, connected: false })
-      } catch (e) {
-        console.error(`[Arbflow] Failed to connect WS for ${symbol}:`, e)
+    try {
+      const ws = new WebSocket(orderBookConfig.url)
+      if (abbr === 'LG') {
+        ws.binaryType = 'arraybuffer'
       }
+
+      const conn: DirectWsConnection = {
+        ws,
+        exchangeId: abbr,
+        symbol,
+        symbols: symbolsData.map((s) => s.symbol),
+        marketId,
+      }
+      wsConnections.current.set(wsId, conn)
+
+      ws.onopen = () => {
+        console.log(`[Arbflow] ${exchange.name} WebSocket connected${symbol ? ` for ${symbol}` : ''}`)
+        setExchanges((prev) =>
+          prev.map((ex) => (ex.id === abbr ? { ...ex, wsConnected: true } : ex))
+        )
+
+        if (orderBookConfig.getSubscribeMessages) {
+          const messages = orderBookConfig.getSubscribeMessages(
+            orderBookConfig.sendRequestPerSymbol ? symbolsData[0] : symbolsData
+          )
+          for (const msg of messages) {
+            ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg))
+          }
+        }
+
+        if (orderBookConfig.pingInterval) {
+          conn.pingInterval = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'ping' }))
+            }
+          }, orderBookConfig.pingInterval)
+        }
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          let data: Record<string, unknown>
+          if (abbr === 'LG') {
+            data = decodeMsgpack(event.data as ArrayBuffer) as Record<string, unknown>
+          } else {
+            data = JSON.parse(event.data as string) as Record<string, unknown>
+          }
+
+          if (data.type === 'ping') {
+            ws.send(JSON.stringify({ type: 'pong' }))
+            return
+          }
+
+          const parsed = parseMessage(exchange.id, data)
+          if (parsed?.type === 'orderBook' && parsed.orderBook) {
+            let sym = parsed.symbol
+            if (!sym && marketId !== undefined) {
+              sym = MARKET_ID_TO_SYMBOL[marketId]
+            }
+            if (sym) {
+              updateExchangeMarketStats(sym, abbr, parsed.orderBook)
+            }
+          }
+        } catch (e) {
+          console.error(`[Arbflow] Failed to parse ${exchange.name} message:`, e)
+        }
+      }
+
+      ws.onclose = () => {
+        console.log(`[Arbflow] ${exchange.name} WebSocket closed${symbol ? ` for ${symbol}` : ''}`)
+        if (conn.pingInterval) clearInterval(conn.pingInterval)
+        wsConnections.current.delete(wsId)
+
+        const hasOtherConnections = Array.from(wsConnections.current.values()).some(
+          (c) => c.exchangeId === abbr
+        )
+        if (!hasOtherConnections) {
+          setExchanges((prev) =>
+            prev.map((ex) => (ex.id === abbr ? { ...ex, wsConnected: false } : ex))
+          )
+        }
+      }
+
+      ws.onerror = (e) => {
+        console.error(`[Arbflow] ${exchange.name} WebSocket error${symbol ? ` for ${symbol}` : ''}:`, e)
+        if (conn.pingInterval) clearInterval(conn.pingInterval)
+        wsConnections.current.delete(wsId)
+      }
+    } catch (e) {
+      console.error(`[Arbflow] Failed to connect ${exchange.name} WebSocket:`, e)
     }
-  }, [exchanges, watchedSymbols])
+  }, [updateExchangeMarketStats])
 
-  const connectOmniWs = useCallback(async () => {
-    const omniConfig = getExchangeByAbbr('OM')
-    const quotesInfo = omniConfig?.quotesInfo
-    if (!quotesInfo || quotesInfo.type !== 'websocket') return
-
-    const wsId = 'omni-quotes'
-    if (omniWsConnections.current.has(wsId)) return
-
-    const symbolsData = watchedSymbols
+  const connectAllExchangeOrderbookWs = useCallback((symbols: string[]) => {
+    const symbolsData = symbols
       .map((s) => ALL_SYMBOLS_DATA.find((d) => d.symbol === s))
-      .filter(Boolean)
+      .filter((s): s is SymbolData => s !== undefined)
 
     if (symbolsData.length === 0) return
 
-    const targetTabId = getAnyActiveTabId()
-    if (!targetTabId) return
+    for (const exchange of EXCHANGES) {
+      const { orderBookConfig, abbreviation } = exchange
 
-    console.log('[Arbflow] Connecting Omni WebSocket for symbols:', watchedSymbols)
+      if (orderBookConfig.sendRequestPerSymbol) {
+        for (const symbolData of symbolsData) {
+          const marketId = SYMBOL_MARKET_ID_MAP[symbolData.symbol]
+          if (marketId === undefined) continue
 
-    try {
-      await chrome.tabs.sendMessage(targetTabId, {
-        type: 'WS_COMMAND',
-        command: 'connect',
-        url: quotesInfo.url,
-        options: {
-          id: wsId,
-          symbols: watchedSymbols,
-          pingInterval: quotesInfo.pingInterval,
-        },
-      })
-      omniWsConnections.current.set(wsId, { symbols: watchedSymbols, connected: false })
-    } catch (e) {
-      console.error('[Arbflow] Failed to connect Omni WebSocket:', e)
-    }
-  }, [watchedSymbols, getAnyActiveTabId])
+          const wsId = `${abbreviation}-${symbolData.symbol}`
+          const existing = wsConnections.current.get(wsId)
+          if (existing && existing.ws.readyState !== WebSocket.CLOSED) continue
 
-  const sendWsCommand = useCallback(
-    async (command: string, params: Record<string, unknown> = {}) => {
-      const lighterEx = exchanges.find((ex) => ex.id === 'LG')
-      if (!lighterEx?.tabId) return null
-
-      try {
-        await chrome.tabs.sendMessage(lighterEx.tabId, {
-          type: 'WS_COMMAND',
-          command,
-          ...params,
-        })
-        return true
-      } catch (e) {
-        console.error('[Arbflow] Failed to send WS command:', e)
-        return null
-      }
-    },
-    [exchanges]
-  )
-
-  const subscribeLighterChannel = useCallback(
-    async (wsId: string, marketId: number) => {
-      const subscriptions = [
-        { type: 'subscribe', channel: `public_market_data/${marketId}` },
-        { type: 'subscribe', channel: `market_stats/${marketId}` },
-      ]
-
-      for (const sub of subscriptions) {
-        await sendWsCommand('send', { id: wsId, data: sub })
-      }
-    },
-    [sendWsCommand]
-  )
-
-  const subscribeOmniChannels = useCallback(
-    async (wsId: string, symbols: string[]) => {
-      const omniConfig = getExchangeByAbbr('OM')
-      const quotesInfo = omniConfig?.quotesInfo
-      if (!quotesInfo?.getSubscribeMessages) return
-
-      const symbolsData = symbols
-        .map((s) => ALL_SYMBOLS_DATA.find((d) => d.symbol === s))
-        .filter(Boolean)
-
-      const messages = quotesInfo.getSubscribeMessages(symbolsData as typeof ALL_SYMBOLS_DATA)
-
-      const targetTabId = getAnyActiveTabId()
-      if (!targetTabId) return
-
-      for (const msg of messages) {
-        try {
-          await chrome.tabs.sendMessage(targetTabId, {
-            type: 'WS_COMMAND',
-            command: 'send',
-            id: wsId,
-            data: msg,
-          })
-        } catch (e) {
-          console.error('[Arbflow] Failed to send Omni subscribe:', e)
+          createWsConnection(exchange, [symbolData], wsId, symbolData.symbol, marketId)
         }
+      } else {
+        const wsId = `${abbreviation}-all`
+        const existing = wsConnections.current.get(wsId)
+        if (existing && existing.ws.readyState !== WebSocket.CLOSED) return
+
+        createWsConnection(exchange, symbolsData, wsId)
       }
-    },
-    [getAnyActiveTabId]
-  )
-
-  const handleLighterMarketData = useCallback(
-    (marketId: number, parsed: { type: string; orderBook?: OrderBook }) => {
-      const symbol = MARKET_ID_TO_SYMBOL[marketId]
-      if (!symbol) return
-
-      if (parsed.type === 'orderBook' && parsed.orderBook) {
-        updateExchangeMarketStats(symbol, 'LG', parsed.orderBook)
-      }
-    },
-    [updateExchangeMarketStats]
-  )
-
-  const handleOmniMarketData = useCallback(
-    (symbol: string, parsed: { type: string; orderBook?: OrderBook }) => {
-      if (!symbol) return
-
-      if (parsed.type === 'orderBook' && parsed.orderBook) {
-        updateExchangeMarketStats(symbol, 'OM', parsed.orderBook)
-      }
-    },
-    [updateExchangeMarketStats]
-  )
+    }
+  }, [createWsConnection])
 
   useEffect(() => {
     const handleMessage = (message: Record<string, unknown>) => {
@@ -399,56 +375,7 @@ export function useExchanges(watchedSymbols: string[]) {
         case 'TAB_CREATED':
         case 'TAB_REMOVED':
         case 'CONTENT_SCRIPT_READY':
-          scanOpenExchanges().then((newExchanges) => {
-            const lighterEx = newExchanges.find((ex) => ex.id === 'LG')
-            if (lighterEx?.tabId && watchedSymbols.length > 0) {
-              connectAllLighterWs()
-              connectOmniWs()
-            }
-          })
-          break
-
-        case 'CUSTOM_WS_OPEN':
-          if ((message.id as string)?.startsWith('lighter-')) {
-            const conn = lighterWsConnections.current.get(message.id as string)
-            if (conn) {
-              conn.connected = true
-              subscribeLighterChannel(message.id as string, conn.marketId!)
-            }
-          } else if ((message.id as string)?.startsWith('omni-')) {
-            const conn = omniWsConnections.current.get(message.id as string)
-            if (conn) {
-              conn.connected = true
-              subscribeOmniChannels(message.id as string, conn.symbols!)
-            }
-            setExchangeWsConnected('OM', true)
-          }
-          break
-
-        case 'CUSTOM_WS_MESSAGE':
-          if ((message.id as string)?.startsWith('lighter-')) {
-            if (message.parsed && message.marketId !== undefined) {
-              handleLighterMarketData(
-                message.marketId as number,
-                message.parsed as { type: string; orderBook?: OrderBook }
-              )
-            }
-          } else if ((message.id as string)?.startsWith('omni-')) {
-            const parsed = message.parsed as { type: string; orderBook?: OrderBook; symbol?: string }
-            if (parsed?.symbol) {
-              handleOmniMarketData(parsed.symbol, parsed)
-            }
-          }
-          break
-
-        case 'CUSTOM_WS_CLOSE':
-        case 'CUSTOM_WS_ERROR':
-          if ((message.id as string)?.startsWith('lighter-')) {
-            lighterWsConnections.current.delete(message.id as string)
-          } else if ((message.id as string)?.startsWith('omni-')) {
-            omniWsConnections.current.delete(message.id as string)
-            setExchangeWsConnected('OM', false)
-          }
+          scanOpenExchanges()
           break
 
         case 'POSITIONS':
@@ -467,18 +394,13 @@ export function useExchanges(watchedSymbols: string[]) {
     return () => {
       chrome.runtime.onMessage.removeListener(handleMessage)
     }
-  }, [
-    scanOpenExchanges,
-    watchedSymbols,
-    connectAllLighterWs,
-    connectOmniWs,
-    subscribeLighterChannel,
-    subscribeOmniChannels,
-    handleLighterMarketData,
-    handleOmniMarketData,
-    setExchangeWsConnected,
-    updateExchangePositions,
-  ])
+  }, [scanOpenExchanges, updateExchangePositions])
+
+  useEffect(() => {
+    if (watchedSymbols.length > 0) {
+      connectAllExchangeOrderbookWs(watchedSymbols)
+    }
+  }, [watchedSymbols, connectAllExchangeOrderbookWs])
 
   const openExchange = useCallback(async (exchangeId: string) => {
     const exchange = INITIAL_EXCHANGES.find((ex) => ex.id === exchangeId)
@@ -497,6 +419,22 @@ export function useExchanges(watchedSymbols: string[]) {
     await chrome.tabs.reload(tabId)
   }, [])
 
+  const disconnectAllWs = useCallback(() => {
+    wsConnections.current.forEach((conn) => {
+      if (conn.pingInterval) {
+        clearInterval(conn.pingInterval)
+      }
+      if (conn.ws.readyState === WebSocket.OPEN) {
+        conn.ws.close()
+      }
+    })
+    wsConnections.current.clear()
+
+    setExchanges((prev) =>
+      prev.map((ex) => ({ ...ex, wsConnected: false }))
+    )
+  }, [])
+
   const refreshAllExchanges = useCallback(async () => {
     for (const exchange of exchanges) {
       if (exchange.tabId) {
@@ -509,17 +447,14 @@ export function useExchanges(watchedSymbols: string[]) {
     await new Promise((r) => setTimeout(r, 2000))
     await scanOpenExchanges()
 
-    lighterWsConnections.current.clear()
-    omniWsConnections.current.clear()
+    disconnectAllWs()
 
-    await new Promise((r) => setTimeout(r, 1000))
+    await new Promise((r) => setTimeout(r, 500))
 
-    const lighterEx = exchanges.find((ex) => ex.id === 'LG')
-    if (lighterEx?.tabId && watchedSymbols.length > 0) {
-      await connectAllLighterWs()
-      await connectOmniWs()
+    if (watchedSymbols.length > 0) {
+      connectAllExchangeOrderbookWs(watchedSymbols)
     }
-  }, [exchanges, scanOpenExchanges, watchedSymbols, connectAllLighterWs, connectOmniWs])
+  }, [exchanges, scanOpenExchanges, watchedSymbols, connectAllExchangeOrderbookWs, disconnectAllWs])
 
   return {
     exchanges,
@@ -533,4 +468,5 @@ export function useExchanges(watchedSymbols: string[]) {
     scanOpenExchanges,
   }
 }
+
 

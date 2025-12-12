@@ -1,8 +1,7 @@
 import { useCallback, useRef } from 'react'
-import type { ExchangeState, SymbolState, TradeStep } from '../../lib/types'
-import { EXCHANGES, getExchangeByAbbr } from '../../lib/config'
+import { EXCHANGES } from '../../lib/config'
 import { LighterAPI, fetchLighterAccountIndex } from '../../lib/lighter-api'
-import type { LighterConfig } from '../../lib/types'
+import type { ExchangeState, LighterConfig, SymbolState, TradeStep } from '../../lib/types'
 
 interface UseTradeProps {
   exchanges: ExchangeState[]
@@ -120,7 +119,7 @@ export function useTrade({
     [getExchangeById, getTradeState]
   )
 
-  const executeApiTrade = useCallback(
+  const executeTradeByAPI = useCallback(
     async (
       exchangeId: string,
       symbol: string,
@@ -197,7 +196,7 @@ export function useTrade({
     [lighterConfig, initializeLighterApi, getExchangeById]
   )
 
-  const executeSimulateTrade = useCallback(
+  const executeTradeByUI = useCallback(
     async (
       exchangeId: string,
       symbol: string,
@@ -270,9 +269,9 @@ export function useTrade({
 
       const executeOne = async (platformId: string, platformDirection: 'long' | 'short', executor: string) => {
         if (executor === 'api') {
-          return executeApiTrade(platformId, symbol, platformDirection, size)
+          return executeTradeByAPI(platformId, symbol, platformDirection, size)
         } else {
-          return executeSimulateTrade(platformId, symbol, platformDirection, size)
+          return executeTradeByUI(platformId, symbol, platformDirection, size)
         }
       }
 
@@ -283,12 +282,12 @@ export function useTrade({
 
       console.log('[Arbflow] Arbitrage completed')
     },
-    [symbolStates, getExchangeById, executeApiTrade, executeSimulateTrade]
+    [symbolStates, getExchangeById, executeTradeByAPI, executeTradeByUI]
   )
 
   return {
-    executeApiTrade,
-    executeSimulateTrade,
+    executeApiTrade: executeTradeByAPI,
+    executeSimulateTrade: executeTradeByUI,
     executeArbitrage,
     initializeLighterApi,
     fetchLighterAccountIndex,

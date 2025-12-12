@@ -6,78 +6,133 @@ function formatPrice(price: number, referencePrice?: number): string {
   return price.toFixed(6)
 }
 
+function formatTime(timestamp?: number): string {
+  if (!timestamp) return '--:--:--'
+  const d = new Date(timestamp)
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  const s = String(d.getSeconds()).padStart(2, '0')
+  return `${h}:${m}:${s}`
+}
+
 interface SpreadRowProps {
   label: string
   spread: number
   refPrice: number
+  platform1LastUpdated?: number
+  platform2LastUpdated?: number
   onExecute: () => void
   monitorCondition: '>' | '<'
+  monitorUnit: 'percent' | 'usdt'
   monitorThreshold: string
   isMonitoring: boolean
+  isAnyMonitoring: boolean
+  canStartMonitor: boolean
   onMonitorConditionToggle: () => void
+  onMonitorUnitToggle: () => void
   onMonitorThresholdChange: (value: string) => void
   onMonitorToggle: () => void
+  rebalanceInfo?: {
+    platformId: string
+    size: number
+    action: '+' | '-'
+    onRebalance: () => void
+  }
 }
 
 export function SpreadRow({
   label,
   spread,
   refPrice,
+  platform1LastUpdated,
+  platform2LastUpdated,
   onExecute,
   monitorCondition,
+  monitorUnit,
   monitorThreshold,
   isMonitoring,
+  isAnyMonitoring,
+  canStartMonitor,
   onMonitorConditionToggle,
+  onMonitorUnitToggle,
   onMonitorThresholdChange,
   onMonitorToggle,
+  rebalanceInfo,
 }: SpreadRowProps) {
   const percentage = (spread / refPrice) * 100
   const sign = spread >= 0 ? '+' : ''
   const isPositive = spread > 0
 
   return (
-    <div
-      className={`flex items-center justify-between gap-2 rounded px-2 py-1.5 text-xs ${
-        isPositive ? 'bg-green-500/10' : 'bg-red-500/10'
-      }`}
-    >
-      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono">{label}</span>
-      <span className={`shrink-0 ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-        {sign}
-        {formatPrice(spread, refPrice)}U({sign}
-        {percentage.toFixed(3)}%)
-      </span>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={onMonitorConditionToggle}
-          className="rounded bg-muted px-1.5 py-0.5 font-mono hover:bg-muted/80"
-        >
-          {monitorCondition}
-        </button>
-        <input
-          type="text"
-          value={monitorThreshold}
-          onChange={(e) => onMonitorThresholdChange(e.target.value)}
-          className="w-12 rounded border border-border bg-background px-1 py-0.5 text-center"
-          placeholder="%"
-        />
-        <button
-          onClick={onMonitorToggle}
-          className={`rounded px-1.5 py-0.5 ${
-            isMonitoring
-              ? 'bg-yellow-500 text-black'
-              : 'bg-muted text-muted-foreground hover:bg-muted/80'
-          }`}
-        >
-          {isMonitoring ? '⏸' : '▶'}
-        </button>
+    <div className={`flex flex-col gap-2 rounded px-3 py-2 bg-muted-foreground/10 text-xs `}>
+      <div className="flex items-center gap-2">
+        <span className="font-bold shrink-0 font-mono text-muted-foreground">{label}</span>
+        <span className={`w-40 font-bold shrink-0 ${isPositive ? 'text-white' : 'text-white'}`}>
+          {sign}
+          {formatPrice(spread, refPrice)}U({sign}
+          {percentage.toFixed(3)}%)
+        </span>
+        <span className="shrink-0 text-muted-foreground text-xs">
+          {formatTime(platform1LastUpdated)}/{formatTime(platform2LastUpdated)}
+        </span>
       </div>
-      <button
-        onClick={onExecute}
-        className="shrink-0 rounded bg-primary px-2 py-0.5 text-primary-foreground hover:bg-primary/90"
-      >
-        执行
-      </button>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
+          当价差
+          <button
+            onClick={onMonitorUnitToggle}
+            disabled={isAnyMonitoring}
+            className={`rounded bg-muted px-1.5 py-0.5 font-mono ${isAnyMonitoring ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted/80'}`}
+          >
+            {monitorUnit === 'percent' ? '%' : 'U'}
+          </button>
+          <button
+            onClick={onMonitorConditionToggle}
+            disabled={isAnyMonitoring}
+            className={`rounded bg-muted px-1.5 py-0.5 font-mono ${isAnyMonitoring ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted/80'}`}
+          >
+            {monitorCondition}
+          </button>
+          <input
+            type="text"
+            value={monitorThreshold}
+            onChange={(e) => onMonitorThresholdChange(e.target.value)}
+            disabled={isAnyMonitoring}
+            className={`w-12 rounded border border-border bg-background px-1 py-0.5 text-center ${isAnyMonitoring ? 'cursor-not-allowed opacity-50' : ''}`}
+            placeholder={monitorUnit === 'percent' ? '%' : 'U'}
+          />
+          <button
+            onClick={onMonitorToggle}
+            disabled={!isMonitoring && !canStartMonitor}
+            className={`rounded px-1.5 py-0.5 ${
+              isMonitoring
+                ? 'cursor-pointer bg-yellow-500 text-black'
+                : canStartMonitor
+                  ? 'cursor-pointer bg-muted text-muted-foreground hover:bg-muted/80'
+                  : 'cursor-not-allowed bg-muted/50 text-muted-foreground/50'
+            }`}
+          >
+            {isMonitoring ? '停止' : '开启监控交易'}
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          {rebalanceInfo && (
+            <button
+              onClick={rebalanceInfo.onRebalance}
+              className="cursor-pointer shrink-0 rounded bg-yellow-500/20 px-1.5 py-0.5 text-yellow-500 hover:bg-yellow-500/30"
+            >
+              {rebalanceInfo.action}
+              {rebalanceInfo.platformId}补齐({rebalanceInfo.size.toFixed(4)})
+            </button>
+          )}
+          <button
+            onClick={onExecute}
+            className="cursor-pointer shrink-0 text-muted-foreground hover:text-white"
+          >
+            立即执行1次
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

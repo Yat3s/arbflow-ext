@@ -1,5 +1,5 @@
-import type { ExchangeConfig, SymbolData, LighterConfig, OmniConfig } from './types'
 import { ALL_SYMBOLS_DATA } from './symbols'
+import type { ExchangeConfig, LighterConfig, OmniConfig, SymbolData } from './types'
 
 export const LIGHTER_WS_URL =
   'wss://mainnet.zklighter.elliot.ai/stream?encoding=msgpack&readonly=true'
@@ -13,9 +13,10 @@ export const EXCHANGES: ExchangeConfig[] = [
     abbreviation: 'LG',
     color: '#6366f1',
     hostUrl: 'https://app.lighter.xyz',
-    quotesInfo: {
-      type: 'websocket',
+    orderBookConfig: {
       url: LIGHTER_WS_URL,
+      pingInterval: 3000,
+      sendRequestPerSymbol: true,
       getSubscribeMessages: (symbol: SymbolData | SymbolData[]) => {
         const s = Array.isArray(symbol) ? symbol[0] : symbol
         return [{ type: 'subscribe', channel: `public_market_data/${s.lighterMarketId}` }]
@@ -77,10 +78,10 @@ export const EXCHANGES: ExchangeConfig[] = [
     abbreviation: 'OM',
     color: '#f59e0b',
     hostUrl: 'https://omni.variational.io',
-    quotesInfo: {
-      type: 'websocket',
+    orderBookConfig: {
       url: OMNI_WS_URL,
       pingInterval: 30000,
+      sendRequestPerSymbol: false,
       getSubscribeMessages: (symbols: SymbolData | SymbolData[]) => {
         const arr = Array.isArray(symbols) ? symbols : [symbols]
         return [JSON.stringify({ type: 'subscribe', symbols: arr.map((s) => s.symbol) })]

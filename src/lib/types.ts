@@ -82,10 +82,10 @@ export interface TradeStep {
   waitAfter?: number
 }
 
-export interface QuotesInfo {
-  type: 'websocket' | 'http'
+export interface OrderBookConfig {
   url: string
   pingInterval?: number
+  sendRequestPerSymbol: boolean // if true, send a request for each symbol separately
   getSubscribeMessages?: (symbols: SymbolData | SymbolData[]) => unknown[]
 }
 
@@ -104,7 +104,7 @@ export interface ExchangeConfig {
   abbreviation: string
   color: string
   hostUrl: string
-  quotesInfo: QuotesInfo
+  orderBookConfig: OrderBookConfig
   tradeExecutor: 'api' | 'simulate'
   tradeSimulator: TradeSimulator
 }
@@ -167,5 +167,7 @@ export interface PriceDiff {
   platform2Ask: number
   platform1Bid: number
   platform2Bid: number
+  platform1LastUpdated?: number
+  platform2LastUpdated?: number
 }
 
