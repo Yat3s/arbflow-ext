@@ -18,8 +18,7 @@ export function ExchangeCard({
   const isOpen = !!exchange.currentUrl
   const posCount = symbolStates.reduce((count, s) => {
     return (
-      count +
-      s.positions.filter((p) => p.exchangeId === exchange.id && p.position !== 0).length
+      count + s.positions.filter((p) => p.exchangeId === exchange.id && p.position !== 0).length
     )
   }, 0)
 
@@ -41,9 +40,7 @@ export function ExchangeCard({
           {exchange.currentSymbol && (
             <span className="text-xs text-muted-foreground">{exchange.currentSymbol}</span>
           )}
-          {posCount > 0 && (
-            <span className="text-xs text-primary">{posCount} 仓</span>
-          )}
+          {posCount > 0 && <span className="text-xs text-primary">{posCount} 仓</span>}
         </div>
         <div className="flex items-center gap-1">
           {isOpen && (
@@ -73,22 +70,32 @@ export function ExchangeCard({
         </div>
       </div>
 
-      {isOpen ? (
-        <div className="mt-2 truncate text-xs text-muted-foreground" title={exchange.currentUrl!}>
-          {exchange.currentUrl}
-        </div>
-      ) : (
-        <div className="mt-2 flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">Page not open</span>
-          <button
-            onClick={onOpen}
-            className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90"
+      <div className="mt-2 space-y-1">
+        {isOpen ? (
+          <div className="truncate text-xs text-muted-foreground" title={exchange.currentUrl!}>
+            {exchange.currentUrl}
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Page not open</span>
+            <button
+              onClick={onOpen}
+              className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground hover:bg-primary/90"
+            >
+              Open
+            </button>
+          </div>
+        )}
+        {exchange.accountInfo?.walletAddress && (
+          <div
+            className="truncate font-mono text-xs text-muted-foreground"
+            title={exchange.accountInfo.walletAddress}
           >
-            Open
-          </button>
-        </div>
-      )}
+            {exchange.accountInfo.walletAddress.slice(0, 6)}...
+            {exchange.accountInfo.walletAddress.slice(-4)}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
-

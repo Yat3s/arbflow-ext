@@ -56,11 +56,16 @@ export interface ExchangeState {
   name: string
   color: string
   baseUrl: string
-  enforeOpenTab: boolean
+  enforceOpenTab: boolean
   tabId: number | null
   currentUrl: string | null
   currentSymbol: string | null
   wsConnected: boolean
+  accountInfo: AccountInfo | null
+}
+
+export interface AccountInfo {
+  walletAddress: string
 }
 
 export interface SymbolState {

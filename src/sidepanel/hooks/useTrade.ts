@@ -181,6 +181,7 @@ export function useTrade({
                 size,
                 side,
                 maxSlippage: 0.005,
+                walletAddress: exchange.accountInfo?.walletAddress,
               },
             })
             .catch((e) => {

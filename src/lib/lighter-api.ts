@@ -701,3 +701,43 @@ export async function fetchLighterAccountIndex(
   return mainAccount.index ?? mainAccount.account_index
 }
 
+export async function createLighterAuthToken(
+  apiPrivateKey: string,
+  apiKeyIndex: number,
+  accountIndex: number
+): Promise<string> {
+  await initializeGlobalWasm()
+
+  if (typeof window.CreateClient !== 'function') {
+    throw new Error('WASM CreateClient not available')
+  }
+
+  const chainId = 304
+  const result = window.CreateClient(LIGHTER_BASE_URL, apiPrivateKey, chainId, apiKeyIndex, accountIndex)
+  if (result && typeof result === 'object' && (result.err || result.error)) {
+    throw new Error(result.err || result.error || 'Failed to create client')
+  }
+
+  if (typeof window.CreateAuthToken !== 'function') {
+    throw new Error('WASM CreateAuthToken not available')
+  }
+
+  const deadline = Math.floor(Date.now() / 1000) + 3600
+  const tokenResult = window.CreateAuthToken(deadline, apiKeyIndex, accountIndex) as {
+    authToken?: string
+    str?: string
+    err?: string
+  }
+
+  if (tokenResult.err) {
+    throw new Error(tokenResult.err)
+  }
+
+  const token = tokenResult.authToken || tokenResult.str
+  if (!token) {
+    throw new Error('CreateAuthToken returned empty token')
+  }
+
+  return token
+}
+

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EXCHANGES } from '../../lib/config'
-import { LIGHTER_WS_URL } from '../../lib/lighter-api'
+import { createLighterAuthToken, LIGHTER_WS_URL } from '../../lib/lighter-api'
 import { decodeMsgpack } from '../../lib/msgpack'
 import { parseMessage } from '../../lib/parsers'
 import {
@@ -53,22 +53,24 @@ const INITIAL_EXCHANGES: ExchangeState[] = [
     name: 'Lighter',
     color: '#6366f1',
     baseUrl: 'https://app.lighter.xyz',
-    enforeOpenTab: false,
+    enforceOpenTab: false,
     tabId: null,
     currentUrl: null,
     currentSymbol: null,
     wsConnected: false,
+    accountInfo: null,
   },
   {
     id: 'OM',
     name: 'Omni',
     color: '#f59e0b',
     baseUrl: 'https://omni.variational.io',
-    enforeOpenTab: true,
+    enforceOpenTab: true,
     tabId: null,
     currentUrl: null,
     currentSymbol: null,
     wsConnected: false,
+    accountInfo: null,
   },
 ]
 
@@ -120,11 +122,10 @@ const EXCHANGE_SHOULD_MERGE_ORDERBOOK: Record<string, boolean> = {
 export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterConfig) {
   const [exchanges, setExchanges] = useState<ExchangeState[]>(INITIAL_EXCHANGES)
   const [symbolStates, setSymbolStates] = useState<SymbolState[]>([])
-  const [lighterWsPositions, setLighterWsPositions] = useState<LighterWsPosition[]>([])
-  const [lighterWsRaw, setLighterWsRaw] = useState<string>('')
+  const [lighterWsMessages, setLighterWsMessages] = useState<string[]>([])
   const wsConnections = useRef<Map<string, DirectWsConnection>>(new Map())
-  const positionWsRef = useRef<WebSocket | null>(null)
-  const positionWsPingInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lighterWsRef = useRef<WebSocket | null>(null)
+  const lighterWsPingInterval = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const getExchangeById = useCallback(
     (id: string) => exchanges.find((ex) => ex.id === id),
@@ -245,7 +246,7 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
     []
   )
 
-  const updateLighterPositionsFromWs = useCallback(
+  const handleLighterWsPositions = useCallback(
     (wsPositions: LighterWsPosition[], isFullUpdate: boolean) => {
       const positions: Position[] = wsPositions
         .filter((p) => parseFloat(p.position) !== 0)
@@ -280,22 +281,71 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
     [updateExchangePositions]
   )
 
-  const scanOpenExchanges = useCallback(async () => {
-    const newExchanges = [...INITIAL_EXCHANGES]
+  const fetchOmniAccountInfo = useCallback(async (tabId: number) => {
+    console.log('[Arbflow] Fetching OM account info, tabId:', tabId)
+    try {
+      const result = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          return fetch('https://omni.variational.io/api/settlement_pools/existing')
+            .then((response) => {
+              if (!response.ok) return null
+              return response.json()
+            })
+            .then((data) => {
+              console.log('[Arbflow] OM account info:', data)
+              return data?.address_other || null
+            })
+            .catch(() => null)
+        },
+      })
+      console.log('[Arbflow] OM script result:', result)
+      const walletAddress = result?.[0]?.result
+      if (walletAddress) {
+        setExchanges((p) => {
+          const current = p.find((ex) => ex.id === 'OM')
+          if (current?.accountInfo?.walletAddress === walletAddress) {
+            return p
+          }
+          return p.map((ex) =>
+            ex.id === 'OM' ? { ...ex, accountInfo: { walletAddress } } : ex
+          )
+        })
+      }
+    } catch (e) {
+      console.error('[Arbflow] Failed to fetch OM account info:', e)
+    }
+  }, [])
 
-    for (const exchange of newExchanges) {
+  const scanOpenExchanges = useCallback(async () => {
+    const tabInfos: Record<string, { tabId: number | null; currentUrl: string | null; currentSymbol: string | null }> = {}
+
+    for (const exchange of INITIAL_EXCHANGES) {
       const tabs = await chrome.tabs.query({ url: `${exchange.baseUrl}/*` })
       if (tabs.length > 0) {
         const tab = tabs[0]
-        exchange.tabId = tab.id ?? null
-        exchange.currentUrl = tab.url ?? null
-        exchange.currentSymbol = tab.url ? extractSymbolFromUrl(tab.url) : null
+        tabInfos[exchange.id] = {
+          tabId: tab.id ?? null,
+          currentUrl: tab.url ?? null,
+          currentSymbol: tab.url ? extractSymbolFromUrl(tab.url) : null,
+        }
+      } else {
+        tabInfos[exchange.id] = { tabId: null, currentUrl: null, currentSymbol: null }
       }
     }
 
-    setExchanges(newExchanges)
-    return newExchanges
-  }, [])
+    setExchanges((prev) =>
+      prev.map((ex) => ({
+        ...ex,
+        ...tabInfos[ex.id],
+      }))
+    )
+
+    const omTabId = tabInfos['OM']?.tabId
+    if (omTabId) {
+      fetchOmniAccountInfo(omTabId)
+    }
+  }, [fetchOmniAccountInfo])
 
   const createWsConnection = useCallback((
     exchange: ExchangeConfig,
@@ -433,34 +483,78 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
     }
   }, [createWsConnection])
 
-  const connectLighterPositionWs = useCallback(() => {
-    if (!lighterConfig?.accountIndex) {
-      console.log('[Arbflow] No Lighter accountIndex configured, skipping position ws')
+  const fetchExchangeAccountInfo = useCallback(async () => {
+    console.log('[Arbflow] Fetching exchange account info')
+    console.log('[Arbflow] Lighter config:', lighterConfig)
+    if (lighterConfig?.l1Address) {
+      console.log('[Arbflow] Lighter l1Address:', lighterConfig.l1Address)
+      setExchanges((prev) => {
+        const lgExchange = prev.find((ex) => ex.id === 'LG')
+        if (lgExchange?.accountInfo?.walletAddress === lighterConfig.l1Address) {
+          return prev
+        }
+        return prev.map((ex) =>
+          ex.id === 'LG' ? { ...ex, accountInfo: { walletAddress: lighterConfig.l1Address } } : ex
+        )
+      })
+    }
+
+    setExchanges((prev) => {
+      const omExchange = prev.find((ex) => ex.id === 'OM')
+      console.log('[Arbflow] OM exchange check:', omExchange?.tabId, omExchange?.accountInfo)
+      if (omExchange?.tabId && !omExchange.accountInfo?.walletAddress) {
+        fetchOmniAccountInfo(omExchange.tabId)
+      }
+      return prev
+    })
+  }, [lighterConfig?.l1Address, fetchOmniAccountInfo])
+
+  const connectLighterWs = useCallback(async () => {
+    if (!lighterConfig?.accountIndex || !lighterConfig?.apiPrivateKey) {
+      console.log('[Arbflow] Lighter config incomplete, skipping ws connection')
       return
     }
 
-    if (positionWsRef.current && positionWsRef.current.readyState !== WebSocket.CLOSED) {
-      console.log('[Arbflow] Lighter position ws already connected')
+    if (lighterWsRef.current && lighterWsRef.current.readyState !== WebSocket.CLOSED) {
+      console.log('[Arbflow] Lighter ws already connected')
       return
     }
 
     const accountId = lighterConfig.accountIndex
-    console.log(`[Arbflow] Connecting Lighter position WebSocket for account ${accountId}`)
+    const apiKeyIndex = lighterConfig.apiKeyIndex
+    console.log(`[Arbflow] Connecting Lighter WebSocket for account ${accountId}`)
+
+    let authToken: string
+    try {
+      authToken = await createLighterAuthToken(
+        lighterConfig.apiPrivateKey,
+        apiKeyIndex,
+        accountId
+      )
+      console.log('[Arbflow] Auth token created:', authToken ? `${authToken.slice(0, 20)}...` : 'EMPTY')
+    } catch (e) {
+      console.error('[Arbflow] Failed to create auth token:', e)
+      return
+    }
 
     try {
       const ws = new WebSocket(LIGHTER_WS_URL)
-      positionWsRef.current = ws
+      lighterWsRef.current = ws
 
       ws.onopen = () => {
-        console.log('[Arbflow] Lighter position WebSocket connected')
-        const subscribeMsg = {
-          type: 'subscribe',
-          channel: `account_all_positions/${accountId}`,
+        console.log('[Arbflow] Lighter WebSocket connected')
+        const subscribeMsgs = [
+          { type: 'subscribe', channel: `account_all_positions/${accountId}` },
+          { type: 'subscribe', channel: `account_all_orders/${accountId}`, auth: authToken },
+          { type: 'subscribe', channel: `account_all_trades/${accountId}`, auth: authToken },
+          { type: 'subscribe', channel: `account_tx/${accountId}`, auth: authToken },
+        ]
+        for (const msg of subscribeMsgs) {
+          ws.send(JSON.stringify(msg))
         }
-        ws.send(JSON.stringify(subscribeMsg))
-        console.log('[Arbflow] Subscribed to:', subscribeMsg.channel)
+        console.log('[Arbflow] Subscribed to:', subscribeMsgs.map((m) => m.channel).join(', '))
 
-        positionWsPingInterval.current = setInterval(() => {
+        lighterWsPingInterval.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'ping' }))
           }
@@ -476,74 +570,59 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
             return
           }
 
-          console.log('[Arbflow] Lighter position ws message:', data)
-          setLighterWsRaw(JSON.stringify(data, null, 2))
+          const timestamp = new Date().toLocaleTimeString()
+          const msgPreview = `[${timestamp}] ${data.type || 'unknown'}`
+          setLighterWsMessages((prev) => [msgPreview, ...prev].slice(0, 50))
 
           if (data.type === 'subscribed/account_all_positions' && data.positions) {
             const positions: LighterWsPosition[] = []
             for (const [, pos] of Object.entries(data.positions)) {
               positions.push(pos as LighterWsPosition)
             }
-            setLighterWsPositions(positions)
-            updateLighterPositionsFromWs(positions, true)
-            console.log('[Arbflow] Lighter ws positions (full):', positions.length)
+            handleLighterWsPositions(positions, true)
           } else if (data.type === 'update/account_all_positions' && data.positions) {
             const deltaPositions: LighterWsPosition[] = []
             for (const [, pos] of Object.entries(data.positions)) {
               deltaPositions.push(pos as LighterWsPosition)
             }
-            setLighterWsPositions((prev) => {
-              const updated = [...prev]
-              for (const delta of deltaPositions) {
-                const idx = updated.findIndex((p) => p.market_id === delta.market_id)
-                if (idx >= 0) {
-                  updated[idx] = delta
-                } else {
-                  updated.push(delta)
-                }
-              }
-              return updated
-            })
-            updateLighterPositionsFromWs(deltaPositions, false)
-            console.log('[Arbflow] Lighter ws positions (delta):', deltaPositions.length)
+            handleLighterWsPositions(deltaPositions, false)
           }
         } catch (e) {
-          console.error('[Arbflow] Failed to parse Lighter position message:', e)
+          console.error('[Arbflow] Failed to parse Lighter ws message:', e)
         }
       }
 
       ws.onclose = () => {
-        console.log('[Arbflow] Lighter position WebSocket closed')
-        positionWsRef.current = null
-        if (positionWsPingInterval.current) {
-          clearInterval(positionWsPingInterval.current)
-          positionWsPingInterval.current = null
+        console.log('[Arbflow] Lighter WebSocket closed')
+        lighterWsRef.current = null
+        if (lighterWsPingInterval.current) {
+          clearInterval(lighterWsPingInterval.current)
+          lighterWsPingInterval.current = null
         }
       }
 
       ws.onerror = (e) => {
-        console.error('[Arbflow] Lighter position WebSocket error:', e)
-        positionWsRef.current = null
-        if (positionWsPingInterval.current) {
-          clearInterval(positionWsPingInterval.current)
-          positionWsPingInterval.current = null
+        console.error('[Arbflow] Lighter WebSocket error:', e)
+        lighterWsRef.current = null
+        if (lighterWsPingInterval.current) {
+          clearInterval(lighterWsPingInterval.current)
+          lighterWsPingInterval.current = null
         }
       }
     } catch (e) {
-      console.error('[Arbflow] Failed to connect Lighter position WebSocket:', e)
+      console.error('[Arbflow] Failed to connect Lighter WebSocket:', e)
     }
-  }, [lighterConfig?.accountIndex, updateLighterPositionsFromWs])
+  }, [lighterConfig?.accountIndex, lighterConfig?.apiPrivateKey, lighterConfig?.apiKeyIndex, handleLighterWsPositions])
 
-  const disconnectLighterPositionWs = useCallback(() => {
-    if (positionWsPingInterval.current) {
-      clearInterval(positionWsPingInterval.current)
-      positionWsPingInterval.current = null
+  const disconnectLighterWs = useCallback(() => {
+    if (lighterWsPingInterval.current) {
+      clearInterval(lighterWsPingInterval.current)
+      lighterWsPingInterval.current = null
     }
-    if (positionWsRef.current) {
-      positionWsRef.current.close()
-      positionWsRef.current = null
-      setLighterWsPositions([])
-      setLighterWsRaw('')
+    if (lighterWsRef.current) {
+      lighterWsRef.current.close()
+      lighterWsRef.current = null
+      setLighterWsMessages([])
     }
   }, [])
 
@@ -581,9 +660,24 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
   useEffect(() => {
     if (watchedSymbols.length > 0) {
       connectAllExchangeOrderbookWs(watchedSymbols)
-      connectLighterPositionWs()
+      connectLighterWs()
+      fetchExchangeAccountInfo()
     }
-  }, [watchedSymbols, connectAllExchangeOrderbookWs, connectLighterPositionWs])
+  }, [watchedSymbols, connectAllExchangeOrderbookWs, connectLighterWs, fetchExchangeAccountInfo])
+
+  useEffect(() => {
+    if (lighterConfig?.l1Address) {
+      setExchanges((prev) => {
+        const lgExchange = prev.find((ex) => ex.id === 'LG')
+        if (lgExchange?.accountInfo?.walletAddress === lighterConfig.l1Address) {
+          return prev
+        }
+        return prev.map((ex) =>
+          ex.id === 'LG' ? { ...ex, accountInfo: { walletAddress: lighterConfig.l1Address } } : ex
+        )
+      })
+    }
+  }, [lighterConfig?.l1Address])
 
   const openExchange = useCallback(async (exchangeId: string) => {
     const exchange = INITIAL_EXCHANGES.find((ex) => ex.id === exchangeId)
@@ -620,7 +714,7 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
 
   const refreshAllExchanges = useCallback(async () => {
     for (const exchange of exchanges) {
-      if (!exchange.enforeOpenTab) continue
+      if (!exchange.enforceOpenTab) continue
 
       if (exchange.tabId) {
         await chrome.tabs.reload(exchange.tabId)
@@ -633,21 +727,20 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
     await scanOpenExchanges()
 
     disconnectAllWs()
-    disconnectLighterPositionWs()
+    disconnectLighterWs()
 
     await new Promise((r) => setTimeout(r, 500))
 
     if (watchedSymbols.length > 0) {
       connectAllExchangeOrderbookWs(watchedSymbols)
-      connectLighterPositionWs()
+      connectLighterWs()
     }
-  }, [exchanges, scanOpenExchanges, watchedSymbols, connectAllExchangeOrderbookWs, disconnectAllWs, connectLighterPositionWs, disconnectLighterPositionWs])
+  }, [exchanges, scanOpenExchanges, watchedSymbols, connectAllExchangeOrderbookWs, disconnectAllWs, connectLighterWs, disconnectLighterWs])
 
   return {
     exchanges,
     symbolStates,
-    lighterWsPositions,
-    lighterWsRaw,
+    lighterWsMessages,
     getExchangeById,
     getOrCreateSymbolState,
     openExchange,
@@ -655,8 +748,8 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
     refreshTab,
     refreshAllExchanges,
     scanOpenExchanges,
-    connectLighterPositionWs,
-    disconnectLighterPositionWs,
+    connectLighterWs,
+    disconnectLighterWs,
   }
 }
 
