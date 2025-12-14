@@ -473,8 +473,8 @@ export class LighterAPI {
 
   async waitForTransaction(
     txHash: string,
-    maxWaitMs = 15000,
-    pollIntervalMs = 300
+    maxWaitMs = 10000,
+    pollIntervalMs = 200
   ): Promise<{ status: number; block_height?: number }> {
     const startTime = Date.now()
 
@@ -515,67 +515,30 @@ export class LighterAPI {
     const baseAmount = Math.floor(size * Math.pow(10, market.sizeDecimals))
 
     let price: number
+    let nonce: number
+    let t1: number
+
     if (fast) {
-      const nonce = await this.getNextNonce()
-      const t1 = performance.now()
+      nonce = await this.getNextNonce()
+      t1 = performance.now()
       console.log(`[LighterAPI] getNonce: ${(t1 - t0).toFixed(0)}ms`)
-
       price = isAsk ? 1 : Math.pow(10, market.priceDecimals + 7)
-
       console.log(`[LighterAPI] Fast ${side} order: ${size} ${symbol}`)
+    } else {
+      const [orderbook, fetchedNonce] = await Promise.all([this.getOrderbook(symbol), this.getNextNonce()])
+      nonce = fetchedNonce
+      t1 = performance.now()
+      console.log(`[LighterAPI] getOrderbook + getNonce: ${(t1 - t0).toFixed(0)}ms`)
 
-      const signed = this.signer.signCreateOrder({
-        marketIndex: market.id,
-        clientOrderIndex: Date.now(),
-        baseAmount,
-        price,
-        isAsk,
-        orderType: LIGHTER_CONSTANTS.ORDER_TYPE_MARKET,
-        timeInForce: LIGHTER_CONSTANTS.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
-        reduceOnly: false,
-        triggerPrice: LIGHTER_CONSTANTS.NIL_TRIGGER_PRICE,
-        orderExpiry: LIGHTER_CONSTANTS.DEFAULT_IOC_EXPIRY,
-        nonce,
-        apiKeyIndex: this.config!.apiKeyIndex,
-        accountIndex: this.accountIndex!,
-      })
-      const t2 = performance.now()
-      console.log(`[LighterAPI] signOrder: ${(t2 - t1).toFixed(0)}ms`)
+      const ob = orderbook as { bids?: { price: string }[]; asks?: { price: string }[] }
+      const bestPrice = isAsk ? ob.bids?.[0]?.price : ob.asks?.[0]?.price
+      if (!bestPrice) throw new Error(`No ${isAsk ? 'bids' : 'asks'} in orderbook`)
 
-      const result = await this.sendTransaction(signed.txType, signed.txInfo)
-      const t3 = performance.now()
-      console.log(`[LighterAPI] sendTransaction: ${(t3 - t2).toFixed(0)}ms`)
-      console.log(`[LighterAPI] Total: ${(t3 - t0).toFixed(0)}ms`)
-
-      if (result.code !== 200) {
-        throw new Error(result.message || 'Transaction failed')
-      }
-
-      this.incrementNonce()
-
-      return {
-        success: true,
-        txHash: result.tx_hash || 'submitted',
-        status: 'submitted',
-        blockHeight: null,
-      }
+      const priceFloat = parseFloat(bestPrice)
+      const slippageMultiplier = isAsk ? 0.995 : 1.005
+      price = Math.floor(priceFloat * slippageMultiplier * Math.pow(10, market.priceDecimals))
+      console.log(`[LighterAPI] Creating ${side} order: ${size} ${symbol} @ ~$${priceFloat}`)
     }
-
-    const [orderbook, nonce] = await Promise.all([this.getOrderbook(symbol), this.getNextNonce()])
-
-    const t1 = performance.now()
-    console.log(`[LighterAPI] getOrderbook + getNonce: ${(t1 - t0).toFixed(0)}ms`)
-
-    const ob = orderbook as { bids?: { price: string }[]; asks?: { price: string }[] }
-    const bestPrice = isAsk ? ob.bids?.[0]?.price : ob.asks?.[0]?.price
-
-    if (!bestPrice) throw new Error(`No ${isAsk ? 'bids' : 'asks'} in orderbook`)
-
-    const priceFloat = parseFloat(bestPrice)
-    const slippageMultiplier = isAsk ? 0.995 : 1.005
-    price = Math.floor(priceFloat * slippageMultiplier * Math.pow(10, market.priceDecimals))
-
-    console.log(`[LighterAPI] Creating ${side} order: ${size} ${symbol} @ ~$${priceFloat}`)
 
     const signed = this.signer.signCreateOrder({
       marketIndex: market.id,

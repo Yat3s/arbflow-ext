@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchLighterAccountIndex } from '../lib/lighter-api'
 import { SYMBOL_MARKET_ID_MAP } from '../lib/symbols'
 import { ExchangeCard, PositionGroup, SettingsDialog, StatusToast } from './components'
@@ -41,7 +41,15 @@ function WidthOverlay() {
 export function SidePanel() {
   const windowWidth = useWindowWidth()
   const isTooNarrow = windowWidth < MIN_WIDTH
-  const { watchedSymbols, saveWatchedSymbols, lighterConfig, saveLighterConfig } = useSettings()
+  const {
+    watchedSymbols,
+    saveWatchedSymbols,
+    lighterConfig,
+    saveLighterConfig,
+    globalTradeInterval,
+    saveGlobalTradeInterval,
+  } = useSettings()
+  const globalLastTradeTimeRef = useRef<number>(0)
 
   const {
     exchanges,
@@ -156,6 +164,21 @@ export function SidePanel() {
         </div>
       </header>
 
+      <div className="flex items-center gap-2 px-4 pb-2">
+        <span className="text-sm text-muted-foreground">全局交易间隔:</span>
+        <input
+          type="number"
+          value={globalTradeInterval}
+          onChange={(e) =>
+            saveGlobalTradeInterval(Math.max(100, parseInt(e.target.value, 10) || 1000))
+          }
+          className="w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          min={100}
+          step={100}
+        />
+        <span className="text-sm text-muted-foreground">ms</span>
+      </div>
+
       <main className="flex-1 overflow-y-auto p-4">
         <section>
           {sortedSymbols.length === 0 ? (
@@ -172,6 +195,8 @@ export function SidePanel() {
                   exchanges={exchanges}
                   onExecuteArbitrage={handleExecuteArbitrage}
                   onExecuteSingleTrade={handleExecuteSingleTrade}
+                  globalTradeInterval={globalTradeInterval}
+                  globalLastTradeTimeRef={globalLastTradeTimeRef}
                 />
               ))}
             </div>

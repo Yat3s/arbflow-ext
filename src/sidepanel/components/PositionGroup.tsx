@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ExchangeMarketStats, Position, PriceDiff, SymbolState } from '../../lib/types'
-import { formatTime } from '../../lib/utils'
+import { formatPrice, formatTime } from '../../lib/utils'
 import { ActionPanel } from './ActionPanel'
 
 interface SymbolSettings {
@@ -56,6 +56,8 @@ interface PositionGroupProps {
     direction: 'long' | 'short',
     size: number,
   ) => Promise<void>
+  globalTradeInterval: number
+  globalLastTradeTimeRef: React.MutableRefObject<number>
 }
 
 function calculatePriceDiff(
@@ -124,7 +126,7 @@ function PositionItem({ pos, exchange }: { pos: Position; exchange?: { color: st
         {pos.position}({pos.positionValue?.toFixed(2)}u)
       </span>
       <span className="text-muted-foreground">
-        入场 {pos.avgEntryPrice.toFixed(2)} / fnd {fundingSign}
+        入场 {formatPrice(pos.avgEntryPrice)} / fnd {fundingSign}
         {Math.abs(funding).toFixed(2)}
       </span>
       <span className={`text-right ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
@@ -141,6 +143,8 @@ export function PositionGroup({
   exchanges,
   onExecuteArbitrage,
   onExecuteSingleTrade,
+  globalTradeInterval,
+  globalLastTradeTimeRef,
 }: PositionGroupProps) {
   const savedSettings = loadSymbolSettings(symbol)
   const [tradeSize, setTradeSize] = useState(savedSettings?.tradeSize ?? '')
@@ -314,11 +318,16 @@ export function PositionGroup({
         (currentPlatform1Pos < minPos && positionDelta > 0)
       const canTrade = isWithinLimits || isMovingTowardsLimits
 
+      const timeSinceLastLocalTrade = now - lastTradeTimeRef.current[direction]
+      const timeSinceLastGlobalTrade = now - globalLastTradeTimeRef.current
+
       if (
         consecutiveTriggerRef.current[direction] >= 2 &&
-        now - lastTradeTimeRef.current[direction] >= interval
+        timeSinceLastLocalTrade >= interval &&
+        timeSinceLastGlobalTrade >= globalTradeInterval
       ) {
         lastTradeTimeRef.current[direction] = now
+        globalLastTradeTimeRef.current = now
         consecutiveTriggerRef.current[direction] = 0
 
         if (canTrade) {
@@ -376,6 +385,7 @@ export function PositionGroup({
     isUnbalanced,
     netPosition,
     onExecuteArbitrage,
+    globalTradeInterval,
   ])
 
   return (

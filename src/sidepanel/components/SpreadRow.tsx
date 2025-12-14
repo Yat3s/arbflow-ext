@@ -1,12 +1,4 @@
-function formatPrice(price: number, referencePrice?: number): string {
-  if (!price || price === 0) return '--'
-  const ref = referencePrice ?? price
-  if (Math.abs(ref) >= 1000) return price.toFixed(2)
-  if (Math.abs(ref) >= 1) return price.toFixed(4)
-  return price.toFixed(6)
-}
-
-import { formatTime } from '../../lib/utils'
+import { formatPrice, formatTime } from '../../lib/utils'
 
 interface SpreadRowProps {
   label: string

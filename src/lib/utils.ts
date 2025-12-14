@@ -16,3 +16,12 @@ export function formatTime(timestamp?: number): FormattedTime {
     return { skew, timeStr }
 }
 
+export function formatPrice(price: number, referencePrice?: number): string {
+    if (!price || price === 0) return '--'
+    const ref = referencePrice ?? price
+    if (Math.abs(ref) >= 1000) return price.toFixed(2)
+    if (Math.abs(ref) >= 10) return price.toFixed(3)
+    if (Math.abs(ref) >= 1) return price.toFixed(4)
+    return price.toFixed(6)
+}
+

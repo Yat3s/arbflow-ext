@@ -1,17 +1,21 @@
-import { useState, useEffect, useCallback } from 'react'
-import type { LighterConfig, OmniConfig, ExchangeConfigs } from '../../lib/types'
+import { useCallback, useEffect, useState } from 'react'
 import { DEFAULT_LIGHTER_CONFIG, DEFAULT_OMNI_CONFIG } from '../../lib/config'
 import { DEFAULT_WATCHED_SYMBOLS } from '../../lib/symbols'
+import type { ExchangeConfigs, LighterConfig, OmniConfig } from '../../lib/types'
 
 const STORAGE_KEYS = {
   WATCHED_SYMBOLS: 'arbflow_watched_symbols',
   EXCHANGE_CONFIGS: 'arbflow_exchange_configs',
+  GLOBAL_TRADE_INTERVAL: 'arbflow_global_trade_interval',
 }
+
+const DEFAULT_GLOBAL_TRADE_INTERVAL = 1000
 
 export function useSettings() {
   const [watchedSymbols, setWatchedSymbols] = useState<string[]>(DEFAULT_WATCHED_SYMBOLS)
   const [lighterConfig, setLighterConfig] = useState<LighterConfig>(DEFAULT_LIGHTER_CONFIG)
   const [omniConfig, setOmniConfig] = useState<OmniConfig>(DEFAULT_OMNI_CONFIG)
+  const [globalTradeInterval, setGlobalTradeInterval] = useState<number>(DEFAULT_GLOBAL_TRADE_INTERVAL)
 
   useEffect(() => {
     const savedSymbols = localStorage.getItem(STORAGE_KEYS.WATCHED_SYMBOLS)
@@ -35,6 +39,14 @@ export function useSettings() {
         }
       } catch (e) {
         console.error('[Settings] Failed to load configs:', e)
+      }
+    }
+
+    const savedInterval = localStorage.getItem(STORAGE_KEYS.GLOBAL_TRADE_INTERVAL)
+    if (savedInterval) {
+      const parsed = parseInt(savedInterval, 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        setGlobalTradeInterval(parsed)
       }
     }
   }, [])
@@ -68,6 +80,11 @@ export function useSettings() {
     })
   }, [lighterConfig])
 
+  const saveGlobalTradeInterval = useCallback((interval: number) => {
+    setGlobalTradeInterval(interval)
+    localStorage.setItem(STORAGE_KEYS.GLOBAL_TRADE_INTERVAL, String(interval))
+  }, [])
+
   return {
     watchedSymbols,
     saveWatchedSymbols,
@@ -75,6 +92,8 @@ export function useSettings() {
     saveLighterConfig,
     omniConfig,
     saveOmniConfig,
+    globalTradeInterval,
+    saveGlobalTradeInterval,
   }
 }
 
