@@ -56,6 +56,7 @@ export interface ExchangeState {
   name: string
   color: string
   baseUrl: string
+  enforeOpenTab: boolean
   tabId: number | null
   currentUrl: string | null
   currentSymbol: string | null
@@ -98,6 +99,15 @@ export interface TradeSimulator {
   ) => TradeStep[]
 }
 
+export interface PositionUiParserConfig {
+  tableSelector: string
+  rowSelector: string
+}
+
+export type PositionUpdaterConfig =
+  | { source: 'websocket' }
+  | { source: 'ui'; uiParser: PositionUiParserConfig }
+
 export interface ExchangeConfig {
   id: string
   name: string
@@ -107,6 +117,7 @@ export interface ExchangeConfig {
   orderBookConfig: OrderBookConfig
   tradeExecutor: 'api' | 'simulate'
   tradeSimulator: TradeSimulator
+  positionUpdater: PositionUpdaterConfig
 }
 
 export interface LighterConfig {

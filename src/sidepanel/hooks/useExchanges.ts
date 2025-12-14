@@ -53,6 +53,7 @@ const INITIAL_EXCHANGES: ExchangeState[] = [
     name: 'Lighter',
     color: '#6366f1',
     baseUrl: 'https://app.lighter.xyz',
+    enforeOpenTab: false,
     tabId: null,
     currentUrl: null,
     currentSymbol: null,
@@ -63,6 +64,7 @@ const INITIAL_EXCHANGES: ExchangeState[] = [
     name: 'Omni',
     color: '#f59e0b',
     baseUrl: 'https://omni.variational.io',
+    enforeOpenTab: true,
     tabId: null,
     currentUrl: null,
     currentSymbol: null,
@@ -122,6 +124,7 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
   const [lighterWsRaw, setLighterWsRaw] = useState<string>('')
   const wsConnections = useRef<Map<string, DirectWsConnection>>(new Map())
   const positionWsRef = useRef<WebSocket | null>(null)
+  const positionWsPingInterval = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const getExchangeById = useCallback(
     (id: string) => exchanges.find((ex) => ex.id === id),
@@ -194,7 +197,12 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
   )
 
   const updateExchangePositions = useCallback(
-    (exchangeId: string, positions: Position[], isFullUpdate: boolean) => {
+    (exchangeId: string, positions: Position[], isFullUpdate: boolean, source: 'ui' | 'websocket' = 'ui') => {
+      const exchangeConfig = EXCHANGES.find((e) => e.abbreviation === exchangeId)
+      if (exchangeConfig?.positionUpdater && exchangeConfig.positionUpdater.source !== source) {
+        return
+      }
+
       setSymbolStates((prev) => {
         let newStates = [...prev]
 
@@ -267,7 +275,7 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
           } as Position
         })
 
-      updateExchangePositions('LG', positions, isFullUpdate)
+      updateExchangePositions('LG', positions, isFullUpdate, 'websocket')
     },
     [updateExchangePositions]
   )
@@ -451,13 +459,24 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
         }
         ws.send(JSON.stringify(subscribeMsg))
         console.log('[Arbflow] Subscribed to:', subscribeMsg.channel)
+
+        positionWsPingInterval.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }))
+          }
+        }, 5000)
       }
 
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data as string)
-          console.log('[Arbflow] Lighter position ws message:', data)
 
+          if (data.type === 'ping') {
+            ws.send(JSON.stringify({ type: 'pong' }))
+            return
+          }
+
+          console.log('[Arbflow] Lighter position ws message:', data)
           setLighterWsRaw(JSON.stringify(data, null, 2))
 
           if (data.type === 'subscribed/account_all_positions' && data.positions) {
@@ -496,11 +515,19 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
       ws.onclose = () => {
         console.log('[Arbflow] Lighter position WebSocket closed')
         positionWsRef.current = null
+        if (positionWsPingInterval.current) {
+          clearInterval(positionWsPingInterval.current)
+          positionWsPingInterval.current = null
+        }
       }
 
       ws.onerror = (e) => {
         console.error('[Arbflow] Lighter position WebSocket error:', e)
         positionWsRef.current = null
+        if (positionWsPingInterval.current) {
+          clearInterval(positionWsPingInterval.current)
+          positionWsPingInterval.current = null
+        }
       }
     } catch (e) {
       console.error('[Arbflow] Failed to connect Lighter position WebSocket:', e)
@@ -508,6 +535,10 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
   }, [lighterConfig?.accountIndex, updateLighterPositionsFromWs])
 
   const disconnectLighterPositionWs = useCallback(() => {
+    if (positionWsPingInterval.current) {
+      clearInterval(positionWsPingInterval.current)
+      positionWsPingInterval.current = null
+    }
     if (positionWsRef.current) {
       positionWsRef.current.close()
       positionWsRef.current = null
@@ -532,7 +563,8 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
           updateExchangePositions(
             message.exchange as string,
             message.positions as Position[],
-            message.isFullUpdate as boolean
+            message.isFullUpdate as boolean,
+            'ui'
           )
           break
       }
@@ -588,6 +620,8 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
 
   const refreshAllExchanges = useCallback(async () => {
     for (const exchange of exchanges) {
+      if (!exchange.enforeOpenTab) continue
+
       if (exchange.tabId) {
         await chrome.tabs.reload(exchange.tabId)
       } else {

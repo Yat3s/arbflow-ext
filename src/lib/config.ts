@@ -13,6 +13,7 @@ export const EXCHANGES: ExchangeConfig[] = [
     abbreviation: 'LG',
     color: '#6366f1',
     hostUrl: 'https://app.lighter.xyz',
+    positionUpdater: { source: 'websocket' },
     orderBookConfig: {
       url: LIGHTER_WS_URL,
       pingInterval: 3000,
@@ -78,6 +79,13 @@ export const EXCHANGES: ExchangeConfig[] = [
     abbreviation: 'OM',
     color: '#f59e0b',
     hostUrl: 'https://omni.variational.io',
+    positionUpdater: {
+      source: 'ui',
+      uiParser: {
+        tableSelector: 'svelte-virtual-list-contents',
+        rowSelector: 'div[data-testid="positions-table-row"]',
+      },
+    },
     orderBookConfig: {
       url: OMNI_WS_URL,
       pingInterval: 30000,

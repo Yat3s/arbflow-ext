@@ -1,3 +1,4 @@
+import { EXCHANGES } from '../lib/config'
 import type { ElementInfo, Position, SiteType, TradeStep } from '../lib/types'
 
 const SITE_TYPE: SiteType = window.location.hostname.includes('lighter.xyz')
@@ -5,6 +6,11 @@ const SITE_TYPE: SiteType = window.location.hostname.includes('lighter.xyz')
     : window.location.hostname.includes('variational.io')
         ? 'omni'
         : null
+
+function getExchangeConfigBySiteType(siteType: SiteType) {
+    if (!siteType) return null
+    return EXCHANGES.find((e) => e.id === siteType) || null
+}
 
 console.log('[Arbflow] Content script loaded, SITE_TYPE:', SITE_TYPE)
 
@@ -307,117 +313,55 @@ if (SITE_TYPE) {
         .catch(() => { })
 }
 
-interface PositionsConfig {
-    tableSelector: string
-    rowSelector: string
-    exchangeId: string
-    parseRow: (row: Element) => Position | null
-}
+type PositionRowParser = (row: Element) => Position | null
 
 const parseNum = (text?: string | null): number =>
     parseFloat(text?.replace(/[$,<>]/g, '').trim() || '0') || 0
 
-const POSITIONS_CONFIG: Record<string, PositionsConfig> = {
-    lighter: {
-        tableSelector: 'table[data-testid="positions-table"]',
-        rowSelector: 'tbody tr[data-testid^="row-"]',
-        exchangeId: 'LG',
-        parseRow: (row: Element): Position | null => {
-            const cells = row.querySelectorAll('td')
-            if (cells.length < 9) return null
+const ROW_PARSERS: Record<string, PositionRowParser> = {
+    omni: (row: Element): Position | null => {
+        const cells = row.querySelectorAll(':scope > div')
+        if (cells.length < 8) return null
 
-            const marketCell = cells[0]
-            const directionEl = marketCell.querySelector("[data-testid^='direction-']")
-            const side: 'long' | 'short' =
-                directionEl?.getAttribute('data-testid') === 'direction-long' ? 'long' : 'short'
-            const symbol = marketCell.querySelector('span')?.textContent?.trim() || ''
-            const leverageEl = marketCell.querySelector('span[data-state]')
-            const leverage = leverageEl?.textContent?.replace('x', '').trim() || ''
+        const symbolEl = cells[0]?.querySelector('.link-instrument span')
+        const symbol = symbolEl?.textContent?.trim().replace('-PERP', '') || ''
 
-            const position = parseNum(cells[1]?.textContent)
-            const positionValue = parseNum(cells[2]?.textContent)
-            const avgEntryPrice = parseNum(cells[3]?.textContent)
-            const markPrice = parseNum(cells[4]?.textContent)
-            const liqPriceText = cells[5]?.textContent?.trim()
-            const liquidationPrice = liqPriceText === 'N/A' ? null : parseNum(liqPriceText)
+        const sizeText = cells[1]?.textContent?.trim() || '0'
+        const size = parseNum(sizeText)
+        const side: 'long' | 'short' = size >= 0 ? 'long' : 'short'
 
-            const pnlText = cells[6]?.textContent?.trim() || ''
-            const pnlMatch = pnlText.match(/([+-]?\$?[\d,.]+)/)
-            let unrealizedPnl = pnlMatch ? parseFloat(pnlMatch[1].replace(/[$,]/g, '')) : 0
+        const markPrice = parseNum(cells[2]?.textContent)
+        const positionValue = parseNum(cells[3]?.textContent)
+        const avgEntryPrice = parseNum(cells[4]?.textContent)
+
+        const liqText = cells[5]?.textContent?.trim()
+        const liquidationPrice = liqText === '-' ? null : parseNum(liqText)
+
+        const fundingText = cells[6]?.textContent?.trim() || ''
+        const funding = parseNum(fundingText)
+
+        const pnlText = cells[7]?.textContent?.trim() || ''
+        const pnlMatch = pnlText.match(/([+-]?\$?[\d.,]+)\s*\(([^)]+)\)/)
+        let unrealizedPnl = 0
+        let unrealizedPnlPercent = 0
+        if (pnlMatch) {
+            unrealizedPnl = parseNum(pnlMatch[1])
             if (pnlText.startsWith('-')) unrealizedPnl = -Math.abs(unrealizedPnl)
-            const pnlPercentMatch = pnlText.match(/\(([+-]?[\d,.]+)%\)/)
-            const unrealizedPnlPercent = pnlPercentMatch
-                ? parseFloat(pnlPercentMatch[1].replace(',', ''))
-                : 0
+            unrealizedPnlPercent = parseFloat(pnlMatch[2].replace(/[%,]/g, '')) || 0
+        }
 
-            const margin = parseNum(cells[7]?.textContent)
-            const fundingText = cells[8]?.textContent?.trim() || ''
-            const funding = parseNum(fundingText)
-
-            return {
-                symbol,
-                position,
-                side,
-                leverage,
-                avgEntryPrice,
-                markPrice,
-                positionValue,
-                unrealizedPnl,
-                unrealizedPnlPercent,
-                margin,
-                funding,
-                liquidationPrice,
-            }
-        },
-    },
-    omni: {
-        tableSelector: 'svelte-virtual-list-contents',
-        rowSelector: 'div[data-testid="positions-table-row"]',
-        exchangeId: 'OM',
-        parseRow: (row: Element): Position | null => {
-            const cells = row.querySelectorAll(':scope > div')
-            if (cells.length < 8) return null
-
-            const symbolEl = cells[0]?.querySelector('.link-instrument span')
-            const symbol = symbolEl?.textContent?.trim().replace('-PERP', '') || ''
-
-            const sizeText = cells[1]?.textContent?.trim() || '0'
-            const size = parseNum(sizeText)
-            const side: 'long' | 'short' = size >= 0 ? 'long' : 'short'
-
-            const markPrice = parseNum(cells[2]?.textContent)
-            const positionValue = parseNum(cells[3]?.textContent)
-            const avgEntryPrice = parseNum(cells[4]?.textContent)
-
-            const liqText = cells[5]?.textContent?.trim()
-            const liquidationPrice = liqText === '-' ? null : parseNum(liqText)
-
-            const fundingText = cells[6]?.textContent?.trim() || ''
-            const funding = parseNum(fundingText)
-
-            const pnlText = cells[7]?.textContent?.trim() || ''
-            const pnlMatch = pnlText.match(/([+-]?\$?[\d.,]+)\s*\(([^)]+)\)/)
-            let unrealizedPnl = 0
-            let unrealizedPnlPercent = 0
-            if (pnlMatch) {
-                unrealizedPnl = parseNum(pnlMatch[1])
-                if (pnlText.startsWith('-')) unrealizedPnl = -Math.abs(unrealizedPnl)
-                unrealizedPnlPercent = parseFloat(pnlMatch[2].replace(/[%,]/g, '')) || 0
-            }
-
-            return {
-                symbol,
-                position: Math.abs(size),
-                side,
-                avgEntryPrice,
-                markPrice,
-                positionValue,
-                unrealizedPnl,
-                unrealizedPnlPercent,
-                funding,
-                liquidationPrice,
-            }
-        },
+        return {
+            symbol,
+            position: Math.abs(size),
+            side,
+            avgEntryPrice,
+            markPrice,
+            positionValue,
+            unrealizedPnl,
+            unrealizedPnlPercent,
+            funding,
+            liquidationPrice,
+        }
     },
 }
 
@@ -426,17 +370,21 @@ let lastPositionsHash = ''
 
 function parsePositionsFromDOM(): Position[] | null {
     if (!SITE_TYPE) return null
-    const config = POSITIONS_CONFIG[SITE_TYPE]
-    if (!config) return null
+    const exchangeConfig = getExchangeConfigBySiteType(SITE_TYPE)
+    if (!exchangeConfig || exchangeConfig.positionUpdater.source !== 'ui') return null
 
-    const table = document.querySelector(config.tableSelector)
+    const { uiParser } = exchangeConfig.positionUpdater
+    const rowParser = ROW_PARSERS[SITE_TYPE]
+    if (!rowParser) return null
+
+    const table = document.querySelector(uiParser.tableSelector)
     if (!table) return null
 
-    const rows = table.querySelectorAll(config.rowSelector)
+    const rows = table.querySelectorAll(uiParser.rowSelector)
     const positions: Position[] = []
 
     rows.forEach((row) => {
-        const pos = config.parseRow(row)
+        const pos = rowParser(row)
         if (pos && pos.symbol) {
             positions.push(pos)
         }
@@ -447,8 +395,8 @@ function parsePositionsFromDOM(): Position[] | null {
 
 function sendPositionsUpdate() {
     if (!SITE_TYPE) return
-    const config = POSITIONS_CONFIG[SITE_TYPE]
-    if (!config) return
+    const exchangeConfig = getExchangeConfigBySiteType(SITE_TYPE)
+    if (!exchangeConfig || exchangeConfig.positionUpdater.source !== 'ui') return
 
     const positions = parsePositionsFromDOM()
     if (!positions) return
@@ -464,7 +412,7 @@ function sendPositionsUpdate() {
             type: 'POSITIONS',
             target: 'sidepanel',
             site: SITE_TYPE,
-            exchange: config.exchangeId,
+            exchange: exchangeConfig.abbreviation,
             positions: positions,
             isFullUpdate: true,
             timestamp: Date.now(),
@@ -474,11 +422,13 @@ function sendPositionsUpdate() {
 
 function startPositionsObserver() {
     if (!SITE_TYPE) return
-    const config = POSITIONS_CONFIG[SITE_TYPE]
-    if (!config) return
+    const exchangeConfig = getExchangeConfigBySiteType(SITE_TYPE)
+    if (!exchangeConfig || exchangeConfig.positionUpdater.source !== 'ui') return
+
+    const { uiParser } = exchangeConfig.positionUpdater
 
     const tryStart = () => {
-        const table = document.querySelector(config.tableSelector)
+        const table = document.querySelector(uiParser.tableSelector)
         if (!table) {
             setTimeout(tryStart, 1000)
             return
@@ -505,8 +455,11 @@ function startPositionsObserver() {
     }
 }
 
-if (SITE_TYPE === 'lighter' || SITE_TYPE === 'omni') {
-    startPositionsObserver()
+if (SITE_TYPE) {
+    const config = getExchangeConfigBySiteType(SITE_TYPE)
+    if (config?.positionUpdater.source === 'ui') {
+        startPositionsObserver()
+    }
 }
 
 async function executeDOMStep(step: TradeStep): Promise<{ success: boolean; selector: string; type: string }> {

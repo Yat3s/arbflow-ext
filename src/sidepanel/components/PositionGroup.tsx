@@ -124,7 +124,7 @@ function PositionItem({ pos, exchange }: { pos: Position; exchange?: { color: st
         {pos.position}({pos.positionValue?.toFixed(2)}u)
       </span>
       <span className="text-muted-foreground">
-        入 {pos.avgEntryPrice.toFixed(2)} / fnd {fundingSign}
+        入场 {pos.avgEntryPrice.toFixed(2)} / fnd {fundingSign}
         {Math.abs(funding).toFixed(2)}
       </span>
       <span className={`text-right ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
