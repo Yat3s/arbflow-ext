@@ -43,8 +43,18 @@ export function SidePanel() {
   const isTooNarrow = windowWidth < MIN_WIDTH
   const { watchedSymbols, saveWatchedSymbols, lighterConfig, saveLighterConfig } = useSettings()
 
-  const { exchanges, symbolStates, openExchange, focusTab, refreshTab, refreshAllExchanges } =
-    useExchanges(watchedSymbols)
+  const {
+    exchanges,
+    symbolStates,
+    lighterWsPositions,
+    lighterWsRaw,
+    openExchange,
+    focusTab,
+    refreshTab,
+    refreshAllExchanges,
+    connectLighterPositionWs,
+    disconnectLighterPositionWs,
+  } = useExchanges(watchedSymbols, lighterConfig)
 
   const { executeArbitrage, executeApiTrade } = useTrade({
     exchanges,
@@ -56,6 +66,7 @@ export function SidePanel() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [status, setStatus] = useState<{ message: string; isSuccess: boolean } | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [showWsDebug, setShowWsDebug] = useState(false)
 
   const showStatus = useCallback((message: string, isSuccess: boolean) => {
     setStatus({ message, isSuccess })
@@ -182,6 +193,69 @@ export function SidePanel() {
               />
             ))}
           </div>
+        </section>
+
+        <section className="mt-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-medium text-muted-foreground">Lighter Position WS Debug</h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={connectLighterPositionWs}
+                className="cursor-pointer rounded bg-primary/10 px-3 py-1 text-xs text-primary hover:bg-primary/20"
+              >
+                Connect
+              </button>
+              <button
+                onClick={disconnectLighterPositionWs}
+                className="cursor-pointer rounded bg-destructive/10 px-3 py-1 text-xs text-destructive hover:bg-destructive/20"
+              >
+                Disconnect
+              </button>
+              <button
+                onClick={() => setShowWsDebug(!showWsDebug)}
+                className="cursor-pointer rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+              >
+                {showWsDebug ? '▼ Hide' : '▶ Show'}
+              </button>
+            </div>
+          </div>
+          {showWsDebug && (
+            <div className="space-y-3">
+              <div className="rounded-lg border p-3">
+                <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+                  Positions ({lighterWsPositions.length})
+                </h3>
+                {lighterWsPositions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No positions received</p>
+                ) : (
+                  <div className="space-y-2">
+                    {lighterWsPositions.map((pos) => (
+                      <div key={pos.market_id} className="rounded bg-muted/50 p-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{pos.symbol}</span>
+                          <span className={pos.sign > 0 ? 'text-green-500' : 'text-red-500'}>
+                            {pos.sign > 0 ? 'Long' : 'Short'} {pos.position}
+                          </span>
+                        </div>
+                        <div className="mt-1 grid grid-cols-2 gap-x-4 text-muted-foreground">
+                          <span>Entry: ${pos.avg_entry_price}</span>
+                          <span>Value: ${pos.position_value}</span>
+                          <span>uPnL: ${pos.unrealized_pnl}</span>
+                          <span>Liq: ${pos.liquidation_price}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="rounded-lg border p-3">
+                <h3 className="mb-2 text-xs font-medium text-muted-foreground">Raw Message</h3>
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs text-muted-foreground">
+                  {lighterWsRaw || 'No messages received'}
+                </pre>
+              </div>
+            </div>
+          )}
         </section>
       </main>
 

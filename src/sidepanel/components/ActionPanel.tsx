@@ -14,15 +14,8 @@ interface TradeLog {
   message: string
 }
 
-interface SimulatedPositions {
-  [exchangeId: string]: number
-}
-
-export type TradeMode = 'simulated' | 'real'
-
 interface ActionPanelProps {
   priceDiff: PriceDiff
-  exchanges: { id: string; name: string; color: string }[]
   tradeSize: string
   setTradeSize: (value: string) => void
   positionMin: string
@@ -31,16 +24,10 @@ interface ActionPanelProps {
   setPositionMax: (value: string) => void
   tradeInterval: string
   setTradeInterval: (value: string) => void
-  tradeMode: TradeMode
-  setTradeMode: (mode: TradeMode) => void
   monitor2to1: MonitorState
   setMonitor2to1: React.Dispatch<React.SetStateAction<MonitorState>>
   monitor1to2: MonitorState
   setMonitor1to2: React.Dispatch<React.SetStateAction<MonitorState>>
-  simulatedPositions: SimulatedPositions
-  setSimulatedPositions: React.Dispatch<React.SetStateAction<SimulatedPositions>>
-  simulatedProfit: number
-  setSimulatedProfit: React.Dispatch<React.SetStateAction<number>>
   tradeLogs: TradeLog[]
   setTradeLogs: React.Dispatch<React.SetStateAction<TradeLog[]>>
   onExecute: (direction: '1to2' | '2to1') => void
@@ -50,7 +37,6 @@ interface ActionPanelProps {
 
 export function ActionPanel({
   priceDiff,
-  exchanges,
   tradeSize,
   setTradeSize,
   positionMin,
@@ -59,16 +45,10 @@ export function ActionPanel({
   setPositionMax,
   tradeInterval,
   setTradeInterval,
-  tradeMode,
-  setTradeMode,
   monitor2to1,
   setMonitor2to1,
   monitor1to2,
   setMonitor1to2,
-  simulatedPositions,
-  setSimulatedPositions,
-  simulatedProfit,
-  setSimulatedProfit,
   tradeLogs,
   setTradeLogs,
   onExecute,
@@ -124,19 +104,6 @@ export function ActionPanel({
     <div className="mt-6 space-y-3">
       <div className="flex items-center gap-2 text-muted-foreground">
         <span className="flex-1 h-px bg-muted-foreground/40"></span>自动交易设置
-        <select
-          value={tradeMode}
-          onChange={(e) => setTradeMode(e.target.value as TradeMode)}
-          disabled={isMonitoring}
-          className={`rounded border px-1.5 py-0.5 text-xs outline-none ${
-            tradeMode === 'real'
-              ? 'border-red-500/60 bg-red-500/10 text-red-500'
-              : 'border-muted-foreground/40 bg-transparent text-muted-foreground'
-          } ${isMonitoring ? 'cursor-not-allowed opacity-50' : ''}`}
-        >
-          <option value="simulated">模拟</option>
-          <option value="real">真实</option>
-        </select>
         <span className="flex-1 h-px bg-muted-foreground/40"></span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -249,46 +216,6 @@ export function ActionPanel({
         }
         rebalanceInfo={getRebalanceInfo1to2()}
       />
-
-      {tradeMode === 'simulated' &&
-        (Object.keys(simulatedPositions).length > 0 || simulatedProfit !== 0) && (
-          <div className="mt-2 flex items-center gap-3 rounded border border-border bg-muted/30 px-2 py-1.5">
-            <span className="text-xs font-medium text-muted-foreground">模拟持仓:</span>
-            {Object.entries(simulatedPositions).map(([exchangeId, position]) => {
-              const exchange = exchanges.find((e) => e.id === exchangeId)
-              return (
-                <div key={exchangeId} className="flex items-center gap-1 text-xs">
-                  <span
-                    className="rounded px-1 py-0.5 text-white"
-                    style={{ backgroundColor: exchange?.color || '#6366f1' }}
-                  >
-                    {exchangeId}
-                  </span>
-                  <span className={position >= 0 ? 'text-green-500' : 'text-red-500'}>
-                    {position >= 0 ? '+' : ''}
-                    {position.toFixed(4)}
-                  </span>
-                </div>
-              )
-            })}
-            <div className="flex items-center gap-1 text-xs">
-              <span className="text-muted-foreground">收益:</span>
-              <span className={simulatedProfit >= 0 ? 'text-green-500' : 'text-red-500'}>
-                {simulatedProfit >= 0 ? '+' : ''}
-                {simulatedProfit.toFixed(2)}U
-              </span>
-            </div>
-            <button
-              onClick={() => {
-                setSimulatedPositions({})
-                setSimulatedProfit(0)
-              }}
-              className="ml-auto text-xs text-muted-foreground hover:text-foreground"
-            >
-              重置
-            </button>
-          </div>
-        )}
 
       {tradeLogs.length > 0 && (
         <div className="mt-2 max-h-32 overflow-y-auto rounded border border-border bg-muted/30 p-2">

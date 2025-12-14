@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EXCHANGES } from '../../lib/config'
+import { LIGHTER_WS_URL } from '../../lib/lighter-api'
 import { decodeMsgpack } from '../../lib/msgpack'
 import { parseMessage } from '../../lib/parsers'
 import {
@@ -11,11 +12,31 @@ import type {
   ExchangeConfig,
   ExchangeMarketStats,
   ExchangeState,
+  LighterConfig,
   OrderBook,
   Position,
   SymbolData,
   SymbolState,
 } from '../../lib/types'
+
+export interface LighterWsPosition {
+  market_id: number
+  symbol: string
+  initial_margin_fraction?: string
+  open_order_count: number
+  pending_order_count: number
+  position_tied_order_count: number
+  sign: number
+  position: string
+  avg_entry_price: string
+  position_value: string
+  unrealized_pnl: string
+  realized_pnl: string
+  liquidation_price: string
+  total_funding_paid_out?: string
+  margin_mode: number
+  allocated_margin: string
+}
 
 interface DirectWsConnection {
   ws: WebSocket
@@ -94,10 +115,13 @@ const EXCHANGE_SHOULD_MERGE_ORDERBOOK: Record<string, boolean> = {
   OM: false,
 }
 
-export function useExchanges(watchedSymbols: string[]) {
+export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterConfig) {
   const [exchanges, setExchanges] = useState<ExchangeState[]>(INITIAL_EXCHANGES)
   const [symbolStates, setSymbolStates] = useState<SymbolState[]>([])
+  const [lighterWsPositions, setLighterWsPositions] = useState<LighterWsPosition[]>([])
+  const [lighterWsRaw, setLighterWsRaw] = useState<string>('')
   const wsConnections = useRef<Map<string, DirectWsConnection>>(new Map())
+  const positionWsRef = useRef<WebSocket | null>(null)
 
   const getExchangeById = useCallback(
     (id: string) => exchanges.find((ex) => ex.id === id),
@@ -211,6 +235,41 @@ export function useExchanges(watchedSymbols: string[]) {
       })
     },
     []
+  )
+
+  const updateLighterPositionsFromWs = useCallback(
+    (wsPositions: LighterWsPosition[], isFullUpdate: boolean) => {
+      const positions: Position[] = wsPositions
+        .filter((p) => parseFloat(p.position) !== 0)
+        .map((p) => {
+          const positionValue = parseFloat(p.position_value)
+          const unrealizedPnl = parseFloat(p.unrealized_pnl)
+          const avgEntryPrice = parseFloat(p.avg_entry_price)
+          const position = parseFloat(p.position)
+          const markPrice = position !== 0 ? positionValue / position : 0
+          const entryValue = position * avgEntryPrice
+          const unrealizedPnlPercent = entryValue !== 0 ? (unrealizedPnl / entryValue) * 100 : 0
+
+          return {
+            symbol: p.symbol,
+            position: Math.abs(position),
+            side: p.sign > 0 ? 'long' : 'short',
+            leverage: p.initial_margin_fraction
+              ? (100 / parseFloat(p.initial_margin_fraction)).toFixed(1) + 'x'
+              : undefined,
+            avgEntryPrice,
+            markPrice,
+            positionValue: Math.abs(positionValue),
+            unrealizedPnl,
+            unrealizedPnlPercent,
+            funding: parseFloat(p.total_funding_paid_out || '0'),
+            liquidationPrice: p.liquidation_price ? parseFloat(p.liquidation_price) : null,
+          } as Position
+        })
+
+      updateExchangePositions('LG', positions, isFullUpdate)
+    },
+    [updateExchangePositions]
   )
 
   const scanOpenExchanges = useCallback(async () => {
@@ -366,6 +425,97 @@ export function useExchanges(watchedSymbols: string[]) {
     }
   }, [createWsConnection])
 
+  const connectLighterPositionWs = useCallback(() => {
+    if (!lighterConfig?.accountIndex) {
+      console.log('[Arbflow] No Lighter accountIndex configured, skipping position ws')
+      return
+    }
+
+    if (positionWsRef.current && positionWsRef.current.readyState !== WebSocket.CLOSED) {
+      console.log('[Arbflow] Lighter position ws already connected')
+      return
+    }
+
+    const accountId = lighterConfig.accountIndex
+    console.log(`[Arbflow] Connecting Lighter position WebSocket for account ${accountId}`)
+
+    try {
+      const ws = new WebSocket(LIGHTER_WS_URL)
+      positionWsRef.current = ws
+
+      ws.onopen = () => {
+        console.log('[Arbflow] Lighter position WebSocket connected')
+        const subscribeMsg = {
+          type: 'subscribe',
+          channel: `account_all_positions/${accountId}`,
+        }
+        ws.send(JSON.stringify(subscribeMsg))
+        console.log('[Arbflow] Subscribed to:', subscribeMsg.channel)
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data as string)
+          console.log('[Arbflow] Lighter position ws message:', data)
+
+          setLighterWsRaw(JSON.stringify(data, null, 2))
+
+          if (data.type === 'subscribed/account_all_positions' && data.positions) {
+            const positions: LighterWsPosition[] = []
+            for (const [, pos] of Object.entries(data.positions)) {
+              positions.push(pos as LighterWsPosition)
+            }
+            setLighterWsPositions(positions)
+            updateLighterPositionsFromWs(positions, true)
+            console.log('[Arbflow] Lighter ws positions (full):', positions.length)
+          } else if (data.type === 'update/account_all_positions' && data.positions) {
+            const deltaPositions: LighterWsPosition[] = []
+            for (const [, pos] of Object.entries(data.positions)) {
+              deltaPositions.push(pos as LighterWsPosition)
+            }
+            setLighterWsPositions((prev) => {
+              const updated = [...prev]
+              for (const delta of deltaPositions) {
+                const idx = updated.findIndex((p) => p.market_id === delta.market_id)
+                if (idx >= 0) {
+                  updated[idx] = delta
+                } else {
+                  updated.push(delta)
+                }
+              }
+              return updated
+            })
+            updateLighterPositionsFromWs(deltaPositions, false)
+            console.log('[Arbflow] Lighter ws positions (delta):', deltaPositions.length)
+          }
+        } catch (e) {
+          console.error('[Arbflow] Failed to parse Lighter position message:', e)
+        }
+      }
+
+      ws.onclose = () => {
+        console.log('[Arbflow] Lighter position WebSocket closed')
+        positionWsRef.current = null
+      }
+
+      ws.onerror = (e) => {
+        console.error('[Arbflow] Lighter position WebSocket error:', e)
+        positionWsRef.current = null
+      }
+    } catch (e) {
+      console.error('[Arbflow] Failed to connect Lighter position WebSocket:', e)
+    }
+  }, [lighterConfig?.accountIndex, updateLighterPositionsFromWs])
+
+  const disconnectLighterPositionWs = useCallback(() => {
+    if (positionWsRef.current) {
+      positionWsRef.current.close()
+      positionWsRef.current = null
+      setLighterWsPositions([])
+      setLighterWsRaw('')
+    }
+  }, [])
+
   useEffect(() => {
     const handleMessage = (message: Record<string, unknown>) => {
       if (message.target !== 'sidepanel') return
@@ -399,8 +549,9 @@ export function useExchanges(watchedSymbols: string[]) {
   useEffect(() => {
     if (watchedSymbols.length > 0) {
       connectAllExchangeOrderbookWs(watchedSymbols)
+      connectLighterPositionWs()
     }
-  }, [watchedSymbols, connectAllExchangeOrderbookWs])
+  }, [watchedSymbols, connectAllExchangeOrderbookWs, connectLighterPositionWs])
 
   const openExchange = useCallback(async (exchangeId: string) => {
     const exchange = INITIAL_EXCHANGES.find((ex) => ex.id === exchangeId)
@@ -448,17 +599,21 @@ export function useExchanges(watchedSymbols: string[]) {
     await scanOpenExchanges()
 
     disconnectAllWs()
+    disconnectLighterPositionWs()
 
     await new Promise((r) => setTimeout(r, 500))
 
     if (watchedSymbols.length > 0) {
       connectAllExchangeOrderbookWs(watchedSymbols)
+      connectLighterPositionWs()
     }
-  }, [exchanges, scanOpenExchanges, watchedSymbols, connectAllExchangeOrderbookWs, disconnectAllWs])
+  }, [exchanges, scanOpenExchanges, watchedSymbols, connectAllExchangeOrderbookWs, disconnectAllWs, connectLighterPositionWs, disconnectLighterPositionWs])
 
   return {
     exchanges,
     symbolStates,
+    lighterWsPositions,
+    lighterWsRaw,
     getExchangeById,
     getOrCreateSymbolState,
     openExchange,
@@ -466,6 +621,8 @@ export function useExchanges(watchedSymbols: string[]) {
     refreshTab,
     refreshAllExchanges,
     scanOpenExchanges,
+    connectLighterPositionWs,
+    disconnectLighterPositionWs,
   }
 }
 

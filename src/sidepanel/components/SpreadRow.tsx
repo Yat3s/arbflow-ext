@@ -6,14 +6,7 @@ function formatPrice(price: number, referencePrice?: number): string {
   return price.toFixed(6)
 }
 
-function formatTime(timestamp?: number): string {
-  if (!timestamp) return '--:--:--'
-  const d = new Date(timestamp)
-  const h = String(d.getHours()).padStart(2, '0')
-  const m = String(d.getMinutes()).padStart(2, '0')
-  const s = String(d.getSeconds()).padStart(2, '0')
-  return `${h}:${m}:${s}`
-}
+import { formatTime } from '../../lib/utils'
 
 interface SpreadRowProps {
   label: string
@@ -73,7 +66,11 @@ export function SpreadRow({
           {percentage.toFixed(3)}%)
         </span>
         <span className="shrink-0 text-muted-foreground text-xs">
-          {formatTime(platform1LastUpdated)}/{formatTime(platform2LastUpdated)}
+          {(() => {
+            const t1 = formatTime(platform1LastUpdated)
+            const t2 = formatTime(platform2LastUpdated)
+            return `${t1.skew ? '⚠️' : ''}${t1.timeStr}/${t2.skew ? '⚠️' : ''}${t2.timeStr}`
+          })()}
         </span>
       </div>
       <div className="flex items-center justify-between gap-2">
@@ -81,15 +78,15 @@ export function SpreadRow({
           当价差
           <button
             onClick={onMonitorUnitToggle}
-            disabled={isAnyMonitoring}
-            className={`rounded bg-muted px-1.5 py-0.5 font-mono ${isAnyMonitoring ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted/80'}`}
+            disabled={isMonitoring}
+            className={`rounded bg-muted px-1.5 py-0.5 font-mono ${isMonitoring ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted/80'}`}
           >
             {monitorUnit === 'percent' ? '%' : 'U'}
           </button>
           <button
             onClick={onMonitorConditionToggle}
-            disabled={isAnyMonitoring}
-            className={`rounded bg-muted px-1.5 py-0.5 font-mono ${isAnyMonitoring ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted/80'}`}
+            disabled={isMonitoring}
+            className={`rounded bg-muted px-1.5 py-0.5 font-mono ${isMonitoring ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted/80'}`}
           >
             {monitorCondition}
           </button>
@@ -97,8 +94,8 @@ export function SpreadRow({
             type="text"
             value={monitorThreshold}
             onChange={(e) => onMonitorThresholdChange(e.target.value)}
-            disabled={isAnyMonitoring}
-            className={`w-12 rounded border border-border bg-background px-1 py-0.5 text-center ${isAnyMonitoring ? 'cursor-not-allowed opacity-50' : ''}`}
+            disabled={isMonitoring}
+            className={`w-12 rounded border border-border bg-background px-1 py-0.5 text-center ${isMonitoring ? 'cursor-not-allowed opacity-50' : ''}`}
             placeholder={monitorUnit === 'percent' ? '%' : 'U'}
           />
           <button

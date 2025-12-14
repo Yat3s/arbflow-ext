@@ -1,6 +1,7 @@
 import type { MarketInfo } from './types'
 
 export const LIGHTER_BASE_URL = 'https://mainnet.zklighter.elliot.ai'
+export const LIGHTER_WS_URL = 'wss://mainnet.zklighter.elliot.ai/stream'
 
 export const LIGHTER_CONSTANTS = {
   ORDER_TYPE_LIMIT: 0,

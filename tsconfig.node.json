@@ -8,5 +8,5 @@
     "allowSyntheticDefaultImports": true,
     "outDir": "./dist-node"
   },
-  "include": ["vite.config.ts", "src/manifest.ts"]
+  "include": ["vite.config.ts", "src/manifest.ts", "package.json"]
 }

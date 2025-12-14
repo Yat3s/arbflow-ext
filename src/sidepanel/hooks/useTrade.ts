@@ -268,10 +268,15 @@ export function useTrade({
       }
 
       const executeOne = async (platformId: string, platformDirection: 'long' | 'short', executor: string) => {
-        if (executor === 'api') {
-          return executeTradeByAPI(platformId, symbol, platformDirection, size)
-        } else {
-          return executeTradeByUI(platformId, symbol, platformDirection, size)
+        try {
+          if (executor === 'api') {
+            return await executeTradeByAPI(platformId, symbol, platformDirection, size)
+          } else {
+            return await executeTradeByUI(platformId, symbol, platformDirection, size)
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          throw new Error(`[${platformId}] ${msg}`)
         }
       }
 

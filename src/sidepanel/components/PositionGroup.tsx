@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ExchangeMarketStats, Position, PriceDiff, SymbolState } from '../../lib/types'
-import { ActionPanel, type TradeMode } from './ActionPanel'
+import { formatTime } from '../../lib/utils'
+import { ActionPanel } from './ActionPanel'
 
 interface SymbolSettings {
   tradeSize: string
@@ -41,11 +42,7 @@ interface TradeLog {
   message: string
 }
 
-interface SimulatedPositions {
-  [exchangeId: string]: number
-}
-
-const DEFAULT_TRADE_INTERVAL = '500'
+const DEFAULT_TRADE_INTERVAL = '1000'
 const STOP_UNBALANCED_INTERVAL = 3000
 
 interface PositionGroupProps {
@@ -59,15 +56,6 @@ interface PositionGroupProps {
     direction: 'long' | 'short',
     size: number,
   ) => Promise<void>
-}
-
-function formatUpdateTime(timestamp?: number): string {
-  if (!timestamp) return '--:--:--'
-  const d = new Date(timestamp)
-  const h = String(d.getHours()).padStart(2, '0')
-  const m = String(d.getMinutes()).padStart(2, '0')
-  const s = String(d.getSeconds()).padStart(2, '0')
-  return `${h}:${m}:${s}`
 }
 
 function calculatePriceDiff(
@@ -126,14 +114,17 @@ function PositionItem({ pos, exchange }: { pos: Position; exchange?: { color: st
         {pos.exchangeId}
       </span>
       <span className={`text-muted-foreground ${isStale ? 'opacity-50' : ''}`}>
-        {formatUpdateTime(pos.lastUpdated)}
+        {(() => {
+          const t = formatTime(pos.lastUpdated)
+          return `${t.timeStr}`
+        })()}
       </span>
       <span className="text-right">
         {pos.side === 'long' ? '' : '-'}
         {pos.position}({pos.positionValue?.toFixed(2)}u)
       </span>
       <span className="text-muted-foreground">
-        入 {pos.avgEntryPrice.toFixed(2)} / 现 {pos.markPrice.toFixed(2)} / fnd {fundingSign}
+        入 {pos.avgEntryPrice.toFixed(2)} / fnd {fundingSign}
         {Math.abs(funding).toFixed(2)}
       </span>
       <span className={`text-right ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
@@ -171,9 +162,6 @@ export function PositionGroup({
     isMonitoring: false,
   })
   const [tradeLogs, setTradeLogs] = useState<TradeLog[]>([])
-  const [simulatedPositions, setSimulatedPositions] = useState<SimulatedPositions>({})
-  const [simulatedProfit, setSimulatedProfit] = useState(0)
-  const [tradeMode, setTradeMode] = useState<TradeMode>('simulated')
   const lastTradeTimeRef = useRef<{ '2to1': number; '1to2': number }>({ '2to1': 0, '1to2': 0 })
   const consecutiveTriggerRef = useRef<{ '2to1': number; '1to2': number }>({ '2to1': 0, '1to2': 0 })
   const firstUnbalancedTimeRef = useRef<number | null>(null)
@@ -214,7 +202,7 @@ export function PositionGroup({
         addTradeLog(`[补齐] 完成: ${platformId} ${direction === 'long' ? '+' : '-'}${size}`)
       })
       .catch((e: Error) => {
-        addTradeLog(`[错误] 补齐失败: ${e.message}`)
+        addTradeLog(`[错误] ${platformId} 补齐失败: ${e.message}`)
       })
   }
 
@@ -264,7 +252,7 @@ export function PositionGroup({
     const now = Date.now()
     const interval = parseInt(tradeInterval) || 500
 
-    if (tradeMode === 'real' && (monitor2to1.isMonitoring || monitor1to2.isMonitoring)) {
+    if (monitor2to1.isMonitoring || monitor1to2.isMonitoring) {
       if (isUnbalanced) {
         if (firstUnbalancedTimeRef.current === null) {
           firstUnbalancedTimeRef.current = now
@@ -289,131 +277,92 @@ export function PositionGroup({
     const size = parseFloat(tradeSize) || 0
     const minPos = parseFloat(positionMin) || 0
     const maxPos = parseFloat(positionMax) || 0
-    const currentPlatform1Pos = simulatedPositions[priceDiff.platform1Id] || 0
+    const currentPlatform1Pos = positionByExchange[priceDiff.platform1Id] || 0
 
-    if (monitor2to1.isMonitoring && size > 0) {
-      const threshold = parseFloat(monitor2to1.threshold) || 0
-      const compareValue =
-        monitor2to1.unit === 'percent'
-          ? (priceDiff.spread2to1 / priceDiff.platform2Ask) * 100
-          : priceDiff.spread2to1
-      const conditionMet =
-        monitor2to1.condition === '>' ? compareValue > threshold : compareValue < threshold
-
-      if (conditionMet) {
-        consecutiveTriggerRef.current['2to1'] += 1
-      } else {
-        consecutiveTriggerRef.current['2to1'] = 0
+    const processDirection = (
+      direction: '2to1' | '1to2',
+      monitor: MonitorState,
+      spread: number,
+      refPrice: number,
+      sellPlatformId: string,
+      buyPlatformId: string,
+      sellPrice: number,
+      buyPrice: number,
+      positionDelta: number,
+    ) => {
+      if (!monitor.isMonitoring || size <= 0) {
+        consecutiveTriggerRef.current[direction] = 0
+        return
       }
 
-      const newPlatform1Pos = currentPlatform1Pos - size
-      const withinLimits = newPlatform1Pos >= minPos && newPlatform1Pos <= maxPos
+      const threshold = parseFloat(monitor.threshold) || 0
+      const compareValue = monitor.unit === 'percent' ? (spread / refPrice) * 100 : spread
+      const conditionMet =
+        monitor.condition === '>' ? compareValue > threshold : compareValue < threshold
+
+      if (conditionMet) {
+        consecutiveTriggerRef.current[direction] += 1
+      } else {
+        consecutiveTriggerRef.current[direction] = 0
+      }
+
+      const newPlatform1Pos = currentPlatform1Pos + positionDelta
+
+      const isWithinLimits = newPlatform1Pos >= minPos && newPlatform1Pos <= maxPos
+      const isMovingTowardsLimits =
+        (currentPlatform1Pos > maxPos && positionDelta < 0) ||
+        (currentPlatform1Pos < minPos && positionDelta > 0)
+      const canTrade = isWithinLimits || isMovingTowardsLimits
 
       if (
-        consecutiveTriggerRef.current['2to1'] >= 2 &&
-        now - lastTradeTimeRef.current['2to1'] >= interval
+        consecutiveTriggerRef.current[direction] >= 2 &&
+        now - lastTradeTimeRef.current[direction] >= interval
       ) {
-        lastTradeTimeRef.current['2to1'] = now
-        consecutiveTriggerRef.current['2to1'] = 0
-        if (withinLimits) {
-          if (tradeMode === 'simulated') {
-            const sellPrice = priceDiff.platform1Bid
-            const buyPrice = priceDiff.platform2Ask
-            const profit = size * sellPrice - size * buyPrice
-            setSimulatedProfit((prev) => prev + profit)
-            setSimulatedPositions((prev) => ({
-              ...prev,
-              [priceDiff.platform1Id]: (prev[priceDiff.platform1Id] || 0) - size,
-              [priceDiff.platform2Id]: (prev[priceDiff.platform2Id] || 0) + size,
-            }))
-            addTradeLog(
-              `[模拟] 在 ${priceDiff.platform1Id} 卖出 ${size} ${symbol}(${sellPrice.toFixed(2)}), 在 ${priceDiff.platform2Id} 买入 ${size} ${symbol}(${buyPrice.toFixed(2)}), 收益 ${profit >= 0 ? '+' : ''}${profit.toFixed(2)}U`,
-            )
-          } else {
-            const sellPrice = priceDiff.platform1Bid
-            const buyPrice = priceDiff.platform2Ask
-            addTradeLog(
-              `[真实] 执行中: 在 ${priceDiff.platform1Id} 卖出 ${size} ${symbol}(${sellPrice.toFixed(2)}), 在 ${priceDiff.platform2Id} 买入 ${size} ${symbol}(${buyPrice.toFixed(2)})`,
-            )
-            onExecuteArbitrage(symbol, '2to1', size)
-              .then(() => {
-                addTradeLog(`[真实] 交易完成: -${priceDiff.platform1Id}+${priceDiff.platform2Id}`)
-              })
-              .catch((e: Error) => {
-                addTradeLog(`[错误] 交易失败: ${e.message}`)
-              })
-          }
+        lastTradeTimeRef.current[direction] = now
+        consecutiveTriggerRef.current[direction] = 0
+
+        if (canTrade) {
+          addTradeLog(
+            `[交易] 执行中: 在 ${sellPlatformId} 卖出 ${size} ${symbol}(${sellPrice.toFixed(2)}), 在 ${buyPlatformId} 买入 ${size} ${symbol}(${buyPrice.toFixed(2)})`,
+          )
+          onExecuteArbitrage(symbol, direction, size)
+            .then(() => {
+              addTradeLog(`[交易] 完成: -${sellPlatformId}+${buyPlatformId}`)
+            })
+            .catch((e: Error) => {
+              addTradeLog(`[错误] -${sellPlatformId}+${buyPlatformId} 交易失败: ${e.message}`)
+            })
         } else {
           addTradeLog(
             `[跳过] 超出持仓限制: ${priceDiff.platform1Id} 当前=${currentPlatform1Pos.toFixed(4)}, 交易后=${newPlatform1Pos.toFixed(4)}, 限制=[${minPos}, ${maxPos}]`,
           )
         }
       }
-    } else {
-      consecutiveTriggerRef.current['2to1'] = 0
     }
 
-    if (monitor1to2.isMonitoring && size > 0) {
-      const threshold = parseFloat(monitor1to2.threshold) || 0
-      const compareValue =
-        monitor1to2.unit === 'percent'
-          ? (priceDiff.spread1to2 / priceDiff.platform1Ask) * 100
-          : priceDiff.spread1to2
-      const conditionMet =
-        monitor1to2.condition === '>' ? compareValue > threshold : compareValue < threshold
+    processDirection(
+      '2to1',
+      monitor2to1,
+      priceDiff.spread2to1,
+      priceDiff.platform2Ask,
+      priceDiff.platform1Id,
+      priceDiff.platform2Id,
+      priceDiff.platform1Bid,
+      priceDiff.platform2Ask,
+      -size,
+    )
 
-      if (conditionMet) {
-        consecutiveTriggerRef.current['1to2'] += 1
-      } else {
-        consecutiveTriggerRef.current['1to2'] = 0
-      }
-
-      const newPlatform1Pos = currentPlatform1Pos + size
-      const withinLimits = newPlatform1Pos >= minPos && newPlatform1Pos <= maxPos
-
-      if (
-        consecutiveTriggerRef.current['1to2'] >= 2 &&
-        now - lastTradeTimeRef.current['1to2'] >= interval
-      ) {
-        lastTradeTimeRef.current['1to2'] = now
-        consecutiveTriggerRef.current['1to2'] = 0
-        if (withinLimits) {
-          if (tradeMode === 'simulated') {
-            const sellPrice = priceDiff.platform2Bid
-            const buyPrice = priceDiff.platform1Ask
-            const profit = size * sellPrice - size * buyPrice
-            setSimulatedProfit((prev) => prev + profit)
-            setSimulatedPositions((prev) => ({
-              ...prev,
-              [priceDiff.platform2Id]: (prev[priceDiff.platform2Id] || 0) - size,
-              [priceDiff.platform1Id]: (prev[priceDiff.platform1Id] || 0) + size,
-            }))
-            addTradeLog(
-              `[模拟] 在 ${priceDiff.platform2Id} 卖出 ${size} ${symbol}(${sellPrice.toFixed(2)}), 在 ${priceDiff.platform1Id} 买入 ${size} ${symbol}(${buyPrice.toFixed(2)}), 收益 ${profit >= 0 ? '+' : ''}${profit.toFixed(2)}U`,
-            )
-          } else {
-            const sellPrice = priceDiff.platform2Bid
-            const buyPrice = priceDiff.platform1Ask
-            addTradeLog(
-              `[真实] 执行中: 在 ${priceDiff.platform2Id} 卖出 ${size} ${symbol}(${sellPrice.toFixed(2)}), 在 ${priceDiff.platform1Id} 买入 ${size} ${symbol}(${buyPrice.toFixed(2)})`,
-            )
-            onExecuteArbitrage(symbol, '1to2', size)
-              .then(() => {
-                addTradeLog(`[真实] 交易完成: -${priceDiff.platform2Id}+${priceDiff.platform1Id}`)
-              })
-              .catch((e: Error) => {
-                addTradeLog(`[错误] 交易失败: ${e.message}`)
-              })
-          }
-        } else {
-          addTradeLog(
-            `[跳过] 超出持仓限制: ${priceDiff.platform1Id} 当前=${currentPlatform1Pos.toFixed(4)}, 交易后=${newPlatform1Pos.toFixed(4)}, 限制=[${minPos}, ${maxPos}]`,
-          )
-        }
-      }
-    } else {
-      consecutiveTriggerRef.current['1to2'] = 0
-    }
+    processDirection(
+      '1to2',
+      monitor1to2,
+      priceDiff.spread1to2,
+      priceDiff.platform1Ask,
+      priceDiff.platform2Id,
+      priceDiff.platform1Id,
+      priceDiff.platform2Bid,
+      priceDiff.platform1Ask,
+      size,
+    )
   }, [
     priceDiff,
     monitor2to1,
@@ -423,8 +372,7 @@ export function PositionGroup({
     positionMin,
     positionMax,
     tradeInterval,
-    simulatedPositions,
-    tradeMode,
+    positionByExchange,
     isUnbalanced,
     netPosition,
     onExecuteArbitrage,
@@ -472,7 +420,6 @@ export function PositionGroup({
       {priceDiff && (
         <ActionPanel
           priceDiff={priceDiff}
-          exchanges={exchanges}
           tradeSize={tradeSize}
           setTradeSize={setTradeSize}
           positionMin={positionMin}
@@ -481,16 +428,10 @@ export function PositionGroup({
           setPositionMax={setPositionMax}
           tradeInterval={tradeInterval}
           setTradeInterval={setTradeInterval}
-          tradeMode={tradeMode}
-          setTradeMode={setTradeMode}
           monitor2to1={monitor2to1}
           setMonitor2to1={setMonitor2to1}
           monitor1to2={monitor1to2}
           setMonitor1to2={setMonitor1to2}
-          simulatedPositions={simulatedPositions}
-          setSimulatedPositions={setSimulatedPositions}
-          simulatedProfit={simulatedProfit}
-          setSimulatedProfit={setSimulatedProfit}
           tradeLogs={tradeLogs}
           setTradeLogs={setTradeLogs}
           onExecute={handleExecute}
