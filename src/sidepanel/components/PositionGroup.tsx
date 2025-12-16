@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ExchangeMarketStats, Position, PriceDiff, SymbolState } from '../../lib/types'
-import { formatPrice, formatTime } from '../../lib/utils'
+import { SYMBOL_ICON_MAP } from '../../lib/symbols'
+import type { ExchangeMarketStats, PriceDiff, SymbolState } from '../../lib/types'
+import { formatTime } from '../../lib/utils'
 import { ActionPanel } from './ActionPanel'
+import { PositionItem } from './PositionItem'
 
 interface SymbolSettings {
   tradeSize: string
@@ -58,6 +60,7 @@ interface PositionGroupProps {
   ) => Promise<void>
   globalTradeInterval: number
   globalLastTradeTimeRef: React.MutableRefObject<number>
+  consecutiveTriggerCount: number
 }
 
 function calculatePriceDiff(
@@ -99,44 +102,6 @@ function calculatePriceDiff(
   }
 }
 
-function PositionItem({ pos, exchange }: { pos: Position; exchange?: { color: string } }) {
-  const color = exchange?.color || '#6366f1'
-  const funding = pos.funding || 0
-  const totalPnl = pos.unrealizedPnl + funding
-  const pnlSign = totalPnl >= 0 ? '+' : '-'
-  const fundingSign = funding >= 0 ? '+' : '-'
-  const isStale = pos.lastUpdated && Date.now() - pos.lastUpdated > 60000
-
-  return (
-    <div className="grid grid-cols-[auto_40px_90px_1fr_40px] items-center gap-2 text-[10px]">
-      <span
-        className="w-10 text-center px-1.5 py-0.5 text-black font-bold"
-        style={{ backgroundColor: color }}
-      >
-        {pos.exchangeId}
-      </span>
-      <span className={`text-muted-foreground ${isStale ? 'opacity-50' : ''}`}>
-        {(() => {
-          const t = formatTime(pos.lastUpdated)
-          return `${t.timeStr}`
-        })()}
-      </span>
-      <span className="text-right">
-        {pos.side === 'long' ? '' : '-'}
-        {pos.position}({pos.positionValue?.toFixed(2)}u)
-      </span>
-      <span className="text-muted-foreground">
-        入场 {formatPrice(pos.avgEntryPrice)} / fnd {fundingSign}
-        {Math.abs(funding).toFixed(2)}
-      </span>
-      <span className={`text-right ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-        {pnlSign}
-        {Math.abs(totalPnl).toFixed(2)}u
-      </span>
-    </div>
-  )
-}
-
 export function PositionGroup({
   symbol,
   symbolState,
@@ -145,6 +110,7 @@ export function PositionGroup({
   onExecuteSingleTrade,
   globalTradeInterval,
   globalLastTradeTimeRef,
+  consecutiveTriggerCount,
 }: PositionGroupProps) {
   const savedSettings = loadSymbolSettings(symbol)
   const [tradeSize, setTradeSize] = useState(savedSettings?.tradeSize ?? '')
@@ -166,6 +132,7 @@ export function PositionGroup({
     isMonitoring: false,
   })
   const [tradeLogs, setTradeLogs] = useState<TradeLog[]>([])
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const lastTradeTimeRef = useRef<{ '2to1': number; '1to2': number }>({ '2to1': 0, '1to2': 0 })
   const consecutiveTriggerRef = useRef<{ '2to1': number; '1to2': number }>({ '2to1': 0, '1to2': 0 })
   const firstUnbalancedTimeRef = useRef<number | null>(null)
@@ -276,6 +243,23 @@ export function PositionGroup({
       } else {
         firstUnbalancedTimeRef.current = null
       }
+
+      const t1 = formatTime(priceDiff.platform1LastUpdated)
+      const t2 = formatTime(priceDiff.platform2LastUpdated)
+      const hasSkew = t1.skew || t2.skew
+
+      if (hasSkew) {
+        if (monitor2to1.isMonitoring) {
+          setMonitor2to1((prev) => ({ ...prev, isMonitoring: false }))
+        }
+        if (monitor1to2.isMonitoring) {
+          setMonitor1to2((prev) => ({ ...prev, isMonitoring: false }))
+        }
+        addTradeLog(
+          `[停止] 价格数据延迟 (${t1.skew ? priceDiff.platform1Id : ''}${t1.skew && t2.skew ? '/' : ''}${t2.skew ? priceDiff.platform2Id : ''})，自动交易已停止`,
+        )
+        return
+      }
     }
 
     const size = parseFloat(tradeSize) || 0
@@ -322,7 +306,7 @@ export function PositionGroup({
       const timeSinceLastGlobalTrade = now - globalLastTradeTimeRef.current
 
       if (
-        consecutiveTriggerRef.current[direction] >= 2 &&
+        consecutiveTriggerRef.current[direction] >= consecutiveTriggerCount &&
         timeSinceLastLocalTrade >= interval &&
         timeSinceLastGlobalTrade >= globalTradeInterval
       ) {
@@ -386,68 +370,110 @@ export function PositionGroup({
     netPosition,
     onExecuteArbitrage,
     globalTradeInterval,
+    consecutiveTriggerCount,
   ])
+
+  const isAnyMonitoring = monitor2to1.isMonitoring || monitor1to2.isMonitoring
+
+  const getMonitoringSummary = () => {
+    if (!isAnyMonitoring || !priceDiff) return null
+    const parts: string[] = []
+    if (monitor2to1.isMonitoring) {
+      parts.push(
+        `-${priceDiff.platform1Id}+${priceDiff.platform2Id} ${monitor2to1.condition} ${monitor2to1.threshold}${monitor2to1.unit === 'percent' ? '%' : 'u'}`,
+      )
+    }
+    if (monitor1to2.isMonitoring) {
+      parts.push(
+        `-${priceDiff.platform2Id}+${priceDiff.platform1Id} ${monitor1to2.condition} ${monitor1to2.threshold}${monitor1to2.unit === 'percent' ? '%' : 'u'}`,
+      )
+    }
+    return parts.join(' | ')
+  }
 
   return (
     <div
-      className={`rounded-md border p-3 border-dashed  ${hasPositions ? 'border-muted-foreground/60' : 'border-muted-foreground/40'}`}
+      className={`rounded-md border p-3 border-dashed  ${hasPositions ? 'border-muted-foreground/70' : 'border-muted-foreground/30'}`}
     >
-      <div className="flex items-center justify-between">
+      <div
+        onClick={() => {
+          setIsCollapsed(!isCollapsed)
+        }}
+        className="flex items-center justify-between cursor-pointer"
+      >
         <div className="flex items-center gap-2">
+          {SYMBOL_ICON_MAP[symbol] && (
+            <img src={SYMBOL_ICON_MAP[symbol]} alt={symbol} className="w-5 h-5 rounded-full" />
+          )}
           <span className="text-xl font-medium">{symbol}</span>
           {isUnbalanced && (
             <span className="text-xs text-yellow-600" title={`净仓位: ${netPosition.toFixed(4)}`}>
               ⚠ 仓位未对齐
             </span>
           )}
+          {isCollapsed && isAnyMonitoring && (
+            <span className="text-xs text-yellow-500 bg-yellow-500/10 px-1.5 py-0.5 rounded">
+              [监控中] {getMonitoringSummary()}
+            </span>
+          )}
         </div>
-        {hasPositions ? (
-          <span className={totalPnl >= 0 ? '' : ''}>
-            {totalPnl >= 0 ? '+' : '-'}
-            {Math.abs(totalPnl).toFixed(2)}u
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">无仓位</span>
-        )}
+        <div className="flex items-center gap-2">
+          {hasPositions ? (
+            <span className={totalPnl >= 0 ? '' : ''}>
+              {totalPnl >= 0 ? '+' : '-'}
+              {Math.abs(totalPnl).toFixed(2)}u
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">无仓位</span>
+          )}
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {isCollapsed ? '▶' : '▼'}
+          </button>
+        </div>
       </div>
 
-      {hasPositions && (
+      {!isCollapsed && (
         <>
-          <div className="mt-2 space-y-1">
-            {positions
-              .sort((a, b) => (a.exchangeId || '').localeCompare(b.exchangeId || ''))
-              .map((pos, idx) => (
-                <PositionItem
-                  key={idx}
-                  pos={pos}
-                  exchange={exchanges.find((e) => e.id === pos.exchangeId)}
-                />
-              ))}
-          </div>
-        </>
-      )}
+          {hasPositions && (
+            <div className="mt-2 space-y-1">
+              {positions
+                .sort((a, b) => (a.exchangeId || '').localeCompare(b.exchangeId || ''))
+                .map((pos, idx) => (
+                  <PositionItem
+                    key={idx}
+                    pos={pos}
+                    exchange={exchanges.find((e) => e.id === pos.exchangeId)}
+                  />
+                ))}
+            </div>
+          )}
 
-      {priceDiff && (
-        <ActionPanel
-          priceDiff={priceDiff}
-          tradeSize={tradeSize}
-          setTradeSize={setTradeSize}
-          positionMin={positionMin}
-          setPositionMin={setPositionMin}
-          positionMax={positionMax}
-          setPositionMax={setPositionMax}
-          tradeInterval={tradeInterval}
-          setTradeInterval={setTradeInterval}
-          monitor2to1={monitor2to1}
-          setMonitor2to1={setMonitor2to1}
-          monitor1to2={monitor1to2}
-          setMonitor1to2={setMonitor1to2}
-          tradeLogs={tradeLogs}
-          setTradeLogs={setTradeLogs}
-          onExecute={handleExecute}
-          positionByExchange={positionByExchange}
-          onRebalance={handleRebalance}
-        />
+          {priceDiff && (
+            <ActionPanel
+              priceDiff={priceDiff}
+              tradeSize={tradeSize}
+              setTradeSize={setTradeSize}
+              positionMin={positionMin}
+              setPositionMin={setPositionMin}
+              positionMax={positionMax}
+              setPositionMax={setPositionMax}
+              tradeInterval={tradeInterval}
+              setTradeInterval={setTradeInterval}
+              monitor2to1={monitor2to1}
+              setMonitor2to1={setMonitor2to1}
+              monitor1to2={monitor1to2}
+              setMonitor1to2={setMonitor1to2}
+              tradeLogs={tradeLogs}
+              setTradeLogs={setTradeLogs}
+              onExecute={handleExecute}
+              positionByExchange={positionByExchange}
+              onRebalance={handleRebalance}
+            />
+          )}
+        </>
       )}
     </div>
   )

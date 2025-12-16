@@ -48,6 +48,8 @@ export function SidePanel() {
     saveLighterConfig,
     globalTradeInterval,
     saveGlobalTradeInterval,
+    consecutiveTriggerCount,
+    saveConsecutiveTriggerCount,
   } = useSettings()
   const globalLastTradeTimeRef = useRef<number>(0)
 
@@ -164,6 +166,7 @@ export function SidePanel() {
         </div>
       </header>
 
+      {/* Global settings */}
       <div className="flex items-center gap-2 px-4 pb-2">
         <span className="text-sm text-muted-foreground">全局交易间隔:</span>
         <input
@@ -177,6 +180,18 @@ export function SidePanel() {
           step={100}
         />
         <span className="text-sm text-muted-foreground">ms</span>
+        <span className="ml-4 text-sm text-muted-foreground">连续触发次数阈值:</span>
+        <input
+          type="number"
+          value={consecutiveTriggerCount}
+          onChange={(e) => {
+            const parsed = parseInt(e.target.value, 10)
+            saveConsecutiveTriggerCount(isNaN(parsed) ? 0 : Math.max(0, parsed))
+          }}
+          className="w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] "
+          min={0}
+          step={1}
+        />
       </div>
 
       <main className="flex-1 overflow-y-auto p-4">
@@ -197,6 +212,7 @@ export function SidePanel() {
                   onExecuteSingleTrade={handleExecuteSingleTrade}
                   globalTradeInterval={globalTradeInterval}
                   globalLastTradeTimeRef={globalLastTradeTimeRef}
+                  consecutiveTriggerCount={consecutiveTriggerCount}
                 />
               ))}
             </div>

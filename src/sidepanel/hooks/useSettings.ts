@@ -7,15 +7,18 @@ const STORAGE_KEYS = {
   WATCHED_SYMBOLS: 'arbflow_watched_symbols',
   EXCHANGE_CONFIGS: 'arbflow_exchange_configs',
   GLOBAL_TRADE_INTERVAL: 'arbflow_global_trade_interval',
+  CONSECUTIVE_TRIGGER_COUNT: 'arbflow_consecutive_trigger_count',
 }
 
 const DEFAULT_GLOBAL_TRADE_INTERVAL = 1000
+const DEFAULT_CONSECUTIVE_TRIGGER_COUNT = 2
 
 export function useSettings() {
   const [watchedSymbols, setWatchedSymbols] = useState<string[]>(DEFAULT_WATCHED_SYMBOLS)
   const [lighterConfig, setLighterConfig] = useState<LighterConfig>(DEFAULT_LIGHTER_CONFIG)
   const [omniConfig, setOmniConfig] = useState<OmniConfig>(DEFAULT_OMNI_CONFIG)
   const [globalTradeInterval, setGlobalTradeInterval] = useState<number>(DEFAULT_GLOBAL_TRADE_INTERVAL)
+  const [consecutiveTriggerCount, setConsecutiveTriggerCount] = useState<number>(DEFAULT_CONSECUTIVE_TRIGGER_COUNT)
 
   useEffect(() => {
     const savedSymbols = localStorage.getItem(STORAGE_KEYS.WATCHED_SYMBOLS)
@@ -47,6 +50,14 @@ export function useSettings() {
       const parsed = parseInt(savedInterval, 10)
       if (!isNaN(parsed) && parsed > 0) {
         setGlobalTradeInterval(parsed)
+      }
+    }
+
+    const savedTriggerCount = localStorage.getItem(STORAGE_KEYS.CONSECUTIVE_TRIGGER_COUNT)
+    if (savedTriggerCount) {
+      const parsed = parseInt(savedTriggerCount, 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        setConsecutiveTriggerCount(parsed)
       }
     }
   }, [])
@@ -85,6 +96,11 @@ export function useSettings() {
     localStorage.setItem(STORAGE_KEYS.GLOBAL_TRADE_INTERVAL, String(interval))
   }, [])
 
+  const saveConsecutiveTriggerCount = useCallback((count: number) => {
+    setConsecutiveTriggerCount(count)
+    localStorage.setItem(STORAGE_KEYS.CONSECUTIVE_TRIGGER_COUNT, String(count))
+  }, [])
+
   return {
     watchedSymbols,
     saveWatchedSymbols,
@@ -94,6 +110,8 @@ export function useSettings() {
     saveOmniConfig,
     globalTradeInterval,
     saveGlobalTradeInterval,
+    consecutiveTriggerCount,
+    saveConsecutiveTriggerCount,
   }
 }
 

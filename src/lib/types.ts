@@ -1,6 +1,7 @@
 export interface SymbolData {
   symbol: string
   lighterMarketId: number
+  icon?: string
 }
 
 export interface MarketInfo {

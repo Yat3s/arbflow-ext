@@ -198,7 +198,7 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
   )
 
   const updateExchangePositions = useCallback(
-    (exchangeId: string, positions: Position[], isFullUpdate: boolean, source: 'ui' | 'websocket' = 'ui') => {
+    (exchangeId: string, positions: Position[], isFullUpdate: boolean, source: 'ui' | 'websocket' = 'ui', closedSymbols?: string[]) => {
       const exchangeConfig = EXCHANGES.find((e) => e.abbreviation === exchangeId)
       if (exchangeConfig?.positionUpdater && exchangeConfig.positionUpdater.source !== source) {
         return
@@ -212,6 +212,18 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
             ...s,
             positions: s.positions.filter((p) => p.exchangeId !== exchangeId),
           }))
+        }
+
+        if (closedSymbols && closedSymbols.length > 0) {
+          newStates = newStates.map((s) => {
+            if (closedSymbols.includes(s.symbol)) {
+              return {
+                ...s,
+                positions: s.positions.filter((p) => p.exchangeId !== exchangeId),
+              }
+            }
+            return s
+          })
         }
 
         const now = Date.now()
@@ -248,35 +260,42 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
 
   const handleLighterWsPositions = useCallback(
     (wsPositions: LighterWsPosition[], isFullUpdate: boolean) => {
-      const positions: Position[] = wsPositions
-        .filter((p) => parseFloat(p.position) !== 0)
-        .map((p) => {
-          const positionValue = parseFloat(p.position_value)
-          const unrealizedPnl = parseFloat(p.unrealized_pnl)
-          const avgEntryPrice = parseFloat(p.avg_entry_price)
-          const position = parseFloat(p.position)
-          const markPrice = position !== 0 ? positionValue / position : 0
-          const entryValue = position * avgEntryPrice
-          const unrealizedPnlPercent = entryValue !== 0 ? (unrealizedPnl / entryValue) * 100 : 0
+      const closedSymbols: string[] = []
+      const positions: Position[] = []
 
-          return {
-            symbol: p.symbol,
-            position: Math.abs(position),
-            side: p.sign > 0 ? 'long' : 'short',
-            leverage: p.initial_margin_fraction
-              ? (100 / parseFloat(p.initial_margin_fraction)).toFixed(1) + 'x'
-              : undefined,
-            avgEntryPrice,
-            markPrice,
-            positionValue: Math.abs(positionValue),
-            unrealizedPnl,
-            unrealizedPnlPercent,
-            funding: parseFloat(p.total_funding_paid_out || '0'),
-            liquidationPrice: p.liquidation_price ? parseFloat(p.liquidation_price) : null,
-          } as Position
-        })
+      for (const p of wsPositions) {
+        const position = parseFloat(p.position)
+        const avgEntryPrice = parseFloat(p.avg_entry_price)
 
-      updateExchangePositions('LG', positions, isFullUpdate, 'websocket')
+        if (position === 0 && avgEntryPrice === 0) {
+          closedSymbols.push(p.symbol)
+          continue
+        }
+
+        const positionValue = parseFloat(p.position_value)
+        const unrealizedPnl = parseFloat(p.unrealized_pnl)
+        const markPrice = position !== 0 ? positionValue / position : 0
+        const entryValue = position * avgEntryPrice
+        const unrealizedPnlPercent = entryValue !== 0 ? (unrealizedPnl / entryValue) * 100 : 0
+
+        positions.push({
+          symbol: p.symbol,
+          position: Math.abs(position),
+          side: p.sign > 0 ? 'long' : 'short',
+          leverage: p.initial_margin_fraction
+            ? (100 / parseFloat(p.initial_margin_fraction)).toFixed(1) + 'x'
+            : undefined,
+          avgEntryPrice,
+          markPrice,
+          positionValue: Math.abs(positionValue),
+          unrealizedPnl,
+          unrealizedPnlPercent,
+          funding: parseFloat(p.total_funding_paid_out || '0'),
+          liquidationPrice: p.liquidation_price ? parseFloat(p.liquidation_price) : null,
+        } as Position)
+      }
+
+      updateExchangePositions('LG', positions, isFullUpdate, 'websocket', closedSymbols)
     },
     [updateExchangePositions]
   )
