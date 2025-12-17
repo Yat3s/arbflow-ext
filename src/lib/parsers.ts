@@ -1,4 +1,4 @@
-import type { ParsedMessage, OrderBookItem } from './types'
+import type { OrderBookItem, ParsedMessage } from './types'
 
 function toOrderBookItems(levels: unknown[]): OrderBookItem[] {
   if (!Array.isArray(levels)) return []
@@ -92,8 +92,8 @@ export const omniParser = {
       return {
         type: 'orderBook',
         orderBook: {
-          bids: [{ price: bidPrice, quantity: 1 }],
-          asks: [{ price: askPrice, quantity: 1 }],
+          bids: [{ price: bidPrice, quantity: 1000000000 }],
+          asks: [{ price: askPrice, quantity: 1000000000 }],
         },
         marketStats: {
           markPrice: Number(data.mark_price) || 0,

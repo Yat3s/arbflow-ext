@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import dingSound from '../../assets/ding.mp3'
+import warnSound from '../../assets/warn.wav'
 import { SYMBOL_ICON_MAP } from '../../lib/symbols'
 import type { ExchangeMarketStats, PriceDiff, SymbolState } from '../../lib/types'
 import { formatTime } from '../../lib/utils'
 import { ActionPanel } from './ActionPanel'
 import { PositionItem } from './PositionItem'
+
+const playDing = () => new Audio(dingSound).play().catch(() => {})
+const playWarn = () => new Audio(warnSound).play().catch(() => {})
 
 interface SymbolSettings {
   tradeSize: string
@@ -63,19 +68,44 @@ interface PositionGroupProps {
   consecutiveTriggerCount: number
 }
 
+function calculateWeightedPrice(
+  orders: { price: number; quantity: number }[],
+  targetSize: number,
+): number | null {
+  if (!orders || orders.length === 0) return null
+  if (targetSize <= 0) return orders[0]?.price ?? null
+
+  let remainingSize = targetSize
+  let totalValue = 0
+  let totalQuantity = 0
+
+  for (const order of orders) {
+    const fillQuantity = Math.min(remainingSize, order.quantity)
+    totalValue += fillQuantity * order.price
+    totalQuantity += fillQuantity
+    remainingSize -= fillQuantity
+
+    if (remainingSize <= 0) break
+  }
+
+  if (totalQuantity === 0) return null
+  return totalValue / totalQuantity
+}
+
 function calculatePriceDiff(
   stats: ExchangeMarketStats[],
   exchanges: { id: string; name: string; color: string }[],
+  tradeSize: number,
 ): PriceDiff | null {
   if (stats.length < 2) return null
 
   const stat1 = stats[0]
   const stat2 = stats[1]
 
-  const platform1Ask = stat1?.orderBook?.asks?.[0]?.price
-  const platform1Bid = stat1?.orderBook?.bids?.[0]?.price
-  const platform2Ask = stat2?.orderBook?.asks?.[0]?.price
-  const platform2Bid = stat2?.orderBook?.bids?.[0]?.price
+  const platform1Ask = calculateWeightedPrice(stat1?.orderBook?.asks || [], tradeSize)
+  const platform1Bid = calculateWeightedPrice(stat1?.orderBook?.bids || [], tradeSize)
+  const platform2Ask = calculateWeightedPrice(stat2?.orderBook?.asks || [], tradeSize)
+  const platform2Bid = calculateWeightedPrice(stat2?.orderBook?.bids || [], tradeSize)
 
   if (!platform1Ask || !platform1Bid || !platform2Ask || !platform2Bid) {
     return null
@@ -143,7 +173,8 @@ export function PositionGroup({
   const hasPositions = positions.length > 0
 
   const sortedStats = [...stats].sort((a, b) => a.exchangeId.localeCompare(b.exchangeId))
-  const priceDiff = calculatePriceDiff(sortedStats, exchanges)
+  const tradeSizeNum = parseFloat(tradeSize) || 0
+  const priceDiff = calculatePriceDiff(sortedStats, exchanges, tradeSizeNum)
 
   const totalPnl = positions.reduce((sum, p) => sum + (p.unrealizedPnl || 0) + (p.funding || 0), 0)
 
@@ -321,9 +352,11 @@ export function PositionGroup({
           onExecuteArbitrage(symbol, direction, size)
             .then(() => {
               addTradeLog(`[交易] 完成: -${sellPlatformId}+${buyPlatformId}`)
+              playDing()
             })
             .catch((e: Error) => {
               addTradeLog(`[错误] -${sellPlatformId}+${buyPlatformId} 交易失败: ${e.message}`)
+              playWarn()
             })
         } else {
           addTradeLog(

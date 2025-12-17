@@ -108,35 +108,56 @@ export function ActionPanel({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <label className="text-xs text-muted-foreground">每次执行数量:</label>
-        <input
-          type="number"
-          value={tradeSize}
-          onChange={(e) => setTradeSize(e.target.value)}
-          disabled={isMonitoring}
-          step="0.01"
-          min="0"
-          className={`w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${isMonitoring ? 'cursor-not-allowed opacity-50' : ''}`}
-        />
+        <div className="relative">
+          <input
+            type="number"
+            value={tradeSize}
+            onChange={(e) => setTradeSize(e.target.value)}
+            disabled={isMonitoring}
+            step="0.01"
+            min="0"
+            className={`w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${isMonitoring ? 'cursor-not-allowed opacity-50' : ''}`}
+          />
+          {tradeSize && parseFloat(tradeSize) > 0 && (
+            <span className="absolute -top-4 left-0 whitespace-nowrap rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+              ≈{(parseFloat(tradeSize) * priceDiff.platform1Ask).toFixed(2)}u
+            </span>
+          )}
+        </div>
         <span className="text-xs text-muted-foreground">{priceDiff.platform1Id} 最大持仓</span>
-        <input
-          type="number"
-          value={positionMin}
-          onChange={(e) => setPositionMin(e.target.value)}
-          disabled={isMonitoring}
-          step="0.01"
-          className={`w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${isMonitoring ? 'cursor-not-allowed opacity-50' : ''}`}
-          placeholder="最小"
-        />
+        <div className="relative">
+          <input
+            type="number"
+            value={positionMin}
+            onChange={(e) => setPositionMin(e.target.value)}
+            disabled={isMonitoring}
+            step="0.01"
+            className={`w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${isMonitoring ? 'cursor-not-allowed opacity-50' : ''}`}
+            placeholder="最小"
+          />
+          {positionMin && parseFloat(positionMin) !== 0 && (
+            <span className="absolute -top-4 left-0 whitespace-nowrap rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+              ≈{(Math.abs(parseFloat(positionMin)) * priceDiff.platform1Ask).toFixed(2)}u
+            </span>
+          )}
+        </div>
         <span className="text-xs text-muted-foreground">~</span>
-        <input
-          type="number"
-          value={positionMax}
-          onChange={(e) => setPositionMax(e.target.value)}
-          disabled={isMonitoring}
-          step="0.01"
-          className={`w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${isMonitoring ? 'cursor-not-allowed opacity-50' : ''}`}
-          placeholder="最大"
-        />
+        <div className="relative">
+          <input
+            type="number"
+            value={positionMax}
+            onChange={(e) => setPositionMax(e.target.value)}
+            disabled={isMonitoring}
+            step="0.01"
+            className={`w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${isMonitoring ? 'cursor-not-allowed opacity-50' : ''}`}
+            placeholder="最大"
+          />
+          {positionMax && parseFloat(positionMax) !== 0 && (
+            <span className="absolute -top-4 left-0 whitespace-nowrap rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+              ≈{(Math.abs(parseFloat(positionMax)) * priceDiff.platform1Ask).toFixed(2)}u
+            </span>
+          )}
+        </div>
         <span className="text-xs text-muted-foreground">交易间隔</span>
         <input
           type="number"

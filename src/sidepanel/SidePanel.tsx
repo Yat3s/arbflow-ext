@@ -186,10 +186,10 @@ export function SidePanel() {
           value={consecutiveTriggerCount}
           onChange={(e) => {
             const parsed = parseInt(e.target.value, 10)
-            saveConsecutiveTriggerCount(isNaN(parsed) ? 0 : Math.max(0, parsed))
+            saveConsecutiveTriggerCount(isNaN(parsed) ? 1 : Math.max(1, parsed))
           }}
           className="w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] "
-          min={0}
+          min={1}
           step={1}
         />
       </div>
