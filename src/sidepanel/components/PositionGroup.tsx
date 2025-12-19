@@ -52,6 +52,8 @@ interface TradeLog {
 const DEFAULT_TRADE_INTERVAL = '1000'
 const STOP_UNBALANCED_INTERVAL = 3000
 
+const REFRESH_INTERVAL = 3 * 60 * 1000
+
 interface PositionGroupProps {
   symbol: string
   symbolState: SymbolState | undefined
@@ -65,7 +67,11 @@ interface PositionGroupProps {
   ) => Promise<void>
   globalTradeInterval: number
   globalLastTradeTimeRef: React.MutableRefObject<number>
+  globalLastRefreshTimeRef: React.MutableRefObject<number>
   consecutiveTriggerCount: number
+  onRefreshAllExchanges: () => Promise<void>
+  autoRestartOnUnbalanced: boolean
+  soundEnabled: boolean
 }
 
 function calculateWeightedPrice(
@@ -140,7 +146,11 @@ export function PositionGroup({
   onExecuteSingleTrade,
   globalTradeInterval,
   globalLastTradeTimeRef,
+  globalLastRefreshTimeRef,
   consecutiveTriggerCount,
+  onRefreshAllExchanges,
+  autoRestartOnUnbalanced,
+  soundEnabled,
 }: PositionGroupProps) {
   const savedSettings = loadSymbolSettings(symbol)
   const [tradeSize, setTradeSize] = useState(savedSettings?.tradeSize ?? '')
@@ -166,6 +176,7 @@ export function PositionGroup({
   const lastTradeTimeRef = useRef<{ '2to1': number; '1to2': number }>({ '2to1': 0, '1to2': 0 })
   const consecutiveTriggerRef = useRef<{ '2to1': number; '1to2': number }>({ '2to1': 0, '1to2': 0 })
   const firstUnbalancedTimeRef = useRef<number | null>(null)
+  const isRefreshingRef = useRef(false)
   const logIdRef = useRef(0)
 
   const positions = symbolState?.positions?.filter((p) => p.position !== 0) || []
@@ -207,6 +218,30 @@ export function PositionGroup({
         addTradeLog(`[错误] ${platformId} 补齐失败: ${e.message}`)
       })
   }
+
+  const tryRefreshAllExchanges = useCallback(
+    (reason: string) => {
+      const now = Date.now()
+      const timeSinceLastRefresh = now - globalLastRefreshTimeRef.current
+      if (isRefreshingRef.current || timeSinceLastRefresh < REFRESH_INTERVAL) {
+        return
+      }
+      isRefreshingRef.current = true
+      globalLastRefreshTimeRef.current = now
+      addTradeLog(`[刷新] ${reason}，正在刷新交易所连接...`)
+      onRefreshAllExchanges()
+        .then(() => {
+          addTradeLog(`[刷新] 交易所连接已刷新`)
+        })
+        .catch((e: Error) => {
+          addTradeLog(`[错误] 刷新失败: ${e.message}`)
+        })
+        .finally(() => {
+          isRefreshingRef.current = false
+        })
+    },
+    [onRefreshAllExchanges],
+  )
 
   const handleExecute = (direction: '1to2' | '2to1') => {
     const size = parseFloat(tradeSize) || 0
@@ -259,18 +294,24 @@ export function PositionGroup({
         if (firstUnbalancedTimeRef.current === null) {
           firstUnbalancedTimeRef.current = now
         } else if (now - firstUnbalancedTimeRef.current >= STOP_UNBALANCED_INTERVAL) {
-          if (monitor2to1.isMonitoring) {
-            setMonitor2to1((prev) => ({ ...prev, isMonitoring: false }))
+          if (autoRestartOnUnbalanced) {
+            tryRefreshAllExchanges(
+              `仓位不对齐持续超过 ${STOP_UNBALANCED_INTERVAL}ms (净仓位: ${netPosition.toFixed(4)})`,
+            )
+          } else {
+            if (monitor2to1.isMonitoring) {
+              setMonitor2to1((prev) => ({ ...prev, isMonitoring: false }))
+            }
+            if (monitor1to2.isMonitoring) {
+              setMonitor1to2((prev) => ({ ...prev, isMonitoring: false }))
+            }
+            addTradeLog(
+              `[停止] 仓位不对齐持续超过 ${STOP_UNBALANCED_INTERVAL}ms (净仓位: ${netPosition.toFixed(4)})，自动交易已停止`,
+            )
           }
-          if (monitor1to2.isMonitoring) {
-            setMonitor1to2((prev) => ({ ...prev, isMonitoring: false }))
-          }
-          addTradeLog(
-            `[停止] 仓位不对齐持续超过 ${STOP_UNBALANCED_INTERVAL}ms (净仓位: ${netPosition.toFixed(4)})，自动交易已停止`,
-          )
           firstUnbalancedTimeRef.current = null
-          return
         }
+        return
       } else {
         firstUnbalancedTimeRef.current = null
       }
@@ -280,15 +321,8 @@ export function PositionGroup({
       const hasSkew = t1.skew || t2.skew
 
       if (hasSkew) {
-        if (monitor2to1.isMonitoring) {
-          setMonitor2to1((prev) => ({ ...prev, isMonitoring: false }))
-        }
-        if (monitor1to2.isMonitoring) {
-          setMonitor1to2((prev) => ({ ...prev, isMonitoring: false }))
-        }
-        addTradeLog(
-          `[停止] 价格数据延迟 (${t1.skew ? priceDiff.platform1Id : ''}${t1.skew && t2.skew ? '/' : ''}${t2.skew ? priceDiff.platform2Id : ''})，自动交易已停止`,
-        )
+        const skewPlatforms = `${t1.skew ? priceDiff.platform1Id : ''}${t1.skew && t2.skew ? '/' : ''}${t2.skew ? priceDiff.platform2Id : ''}`
+        tryRefreshAllExchanges(`价格数据延迟 (${skewPlatforms})`)
         return
       }
     }
@@ -352,16 +386,16 @@ export function PositionGroup({
           onExecuteArbitrage(symbol, direction, size)
             .then(() => {
               addTradeLog(`[交易] 完成: -${sellPlatformId}+${buyPlatformId}`)
-              playDing()
+              if (soundEnabled) playDing()
             })
             .catch((e: Error) => {
               addTradeLog(`[错误] -${sellPlatformId}+${buyPlatformId} 交易失败: ${e.message}`)
-              playWarn()
+              if (soundEnabled) playWarn()
             })
         } else {
-          addTradeLog(
-            `[跳过] 超出持仓限制: ${priceDiff.platform1Id} 当前=${currentPlatform1Pos.toFixed(4)}, 交易后=${newPlatform1Pos.toFixed(4)}, 限制=[${minPos}, ${maxPos}]`,
-          )
+          // addTradeLog(
+          //   `[跳过] 超出持仓限制: ${priceDiff.platform1Id} 当前=${currentPlatform1Pos.toFixed(4)}, 交易后=${newPlatform1Pos.toFixed(4)}, 限制=[${minPos}, ${maxPos}]`,
+          // )
         }
       }
     }
@@ -404,6 +438,9 @@ export function PositionGroup({
     onExecuteArbitrage,
     globalTradeInterval,
     consecutiveTriggerCount,
+    tryRefreshAllExchanges,
+    autoRestartOnUnbalanced,
+    soundEnabled,
   ])
 
   const isAnyMonitoring = monitor2to1.isMonitoring || monitor1to2.isMonitoring

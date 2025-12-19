@@ -50,8 +50,13 @@ export function SidePanel() {
     saveGlobalTradeInterval,
     consecutiveTriggerCount,
     saveConsecutiveTriggerCount,
+    autoRestartOnUnbalanced,
+    saveAutoRestartOnUnbalanced,
+    soundEnabled,
+    saveSoundEnabled,
   } = useSettings()
   const globalLastTradeTimeRef = useRef<number>(0)
+  const globalLastRefreshTimeRef = useRef<number>(0)
 
   const {
     exchanges,
@@ -167,31 +172,65 @@ export function SidePanel() {
       </header>
 
       {/* Global settings */}
-      <div className="flex items-center gap-2 px-4 pb-2">
-        <span className="text-sm text-muted-foreground">全局交易间隔:</span>
-        <input
-          type="number"
-          value={globalTradeInterval}
-          onChange={(e) =>
-            saveGlobalTradeInterval(Math.max(100, parseInt(e.target.value, 10) || 1000))
-          }
-          className="w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-          min={100}
-          step={100}
-        />
-        <span className="text-sm text-muted-foreground">ms</span>
-        <span className="ml-4 text-sm text-muted-foreground">连续触发次数阈值:</span>
-        <input
-          type="number"
-          value={consecutiveTriggerCount}
-          onChange={(e) => {
-            const parsed = parseInt(e.target.value, 10)
-            saveConsecutiveTriggerCount(isNaN(parsed) ? 1 : Math.max(1, parsed))
-          }}
-          className="w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] "
-          min={1}
-          step={1}
-        />
+      <div className="flex flex-col gap-2 px-4 pb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">全局交易间隔:</span>
+          <input
+            type="number"
+            value={globalTradeInterval}
+            onChange={(e) =>
+              saveGlobalTradeInterval(Math.max(100, parseInt(e.target.value, 10) || 1000))
+            }
+            className="w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            min={100}
+            step={100}
+          />
+          <span className="text-sm text-muted-foreground">ms</span>
+          <span className="ml-4 text-sm text-muted-foreground">连续触发次数阈值:</span>
+          <input
+            type="number"
+            value={consecutiveTriggerCount}
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10)
+              saveConsecutiveTriggerCount(isNaN(parsed) ? 1 : Math.max(1, parsed))
+            }}
+            className="w-12 border-b border-muted-foreground/40 bg-transparent px-1 py-0.5 text-xs outline-none focus:border-muted-foreground [appearance:textfield] "
+            min={1}
+            step={1}
+          />
+        </div>
+        <div className="flex items-center gap-4">
+          <label className="flex cursor-pointer items-center gap-2">
+            <span className="text-sm text-muted-foreground">提示音</span>
+            <button
+              onClick={() => saveSoundEnabled(!soundEnabled)}
+              className={`relative h-5 w-9 rounded-full transition-colors ${
+                soundEnabled ? 'bg-primary' : 'bg-muted-foreground/30'
+              }`}
+            >
+              <span
+                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                  soundEnabled ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2">
+            <span className="text-sm text-muted-foreground">仓位异常自重启</span>
+            <button
+              onClick={() => saveAutoRestartOnUnbalanced(!autoRestartOnUnbalanced)}
+              className={`relative h-5 w-9 rounded-full transition-colors ${
+                autoRestartOnUnbalanced ? 'bg-primary' : 'bg-muted-foreground/30'
+              }`}
+            >
+              <span
+                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                  autoRestartOnUnbalanced ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </label>
+        </div>
       </div>
 
       <main className="flex-1 overflow-y-auto p-4">
@@ -212,7 +251,11 @@ export function SidePanel() {
                   onExecuteSingleTrade={handleExecuteSingleTrade}
                   globalTradeInterval={globalTradeInterval}
                   globalLastTradeTimeRef={globalLastTradeTimeRef}
+                  globalLastRefreshTimeRef={globalLastRefreshTimeRef}
                   consecutiveTriggerCount={consecutiveTriggerCount}
+                  onRefreshAllExchanges={refreshAllExchanges}
+                  autoRestartOnUnbalanced={autoRestartOnUnbalanced}
+                  soundEnabled={soundEnabled}
                 />
               ))}
             </div>

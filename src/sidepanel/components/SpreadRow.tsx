@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { formatPrice, formatTime } from '../../lib/utils'
 
 interface SpreadRowProps {
@@ -44,6 +45,7 @@ export function SpreadRow({
   onMonitorToggle,
   rebalanceInfo,
 }: SpreadRowProps) {
+  const [confirmingRebalance, setConfirmingRebalance] = useState(false)
   const percentage = (spread / refPrice) * 100
   const sign = spread >= 0 ? '+' : ''
   const isPositive = spread > 0
@@ -106,13 +108,47 @@ export function SpreadRow({
         </div>
         <div className="flex items-center gap-2">
           {rebalanceInfo && (
-            <button
-              onClick={rebalanceInfo.onRebalance}
-              className="cursor-pointer shrink-0 rounded bg-yellow-500/20 px-1.5 py-0.5 text-yellow-500 hover:bg-yellow-500/30"
-            >
-              {rebalanceInfo.action}
-              {rebalanceInfo.platformId}补齐({rebalanceInfo.size.toFixed(4)})
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setConfirmingRebalance(true)}
+                className="cursor-pointer shrink-0 rounded bg-yellow-500/20 px-1.5 py-0.5 text-yellow-500 hover:bg-yellow-500/30"
+              >
+                {rebalanceInfo.action}
+                {rebalanceInfo.platformId}补齐({rebalanceInfo.size.toFixed(4)})
+              </button>
+              {confirmingRebalance && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setConfirmingRebalance(false)}
+                  />
+                  <div className="absolute bottom-full right-0 z-50 mb-2 rounded-lg border border-border bg-background p-3 shadow-lg">
+                    <p className="mb-2 whitespace-nowrap text-sm">
+                      确认在 {rebalanceInfo.platformId}{' '}
+                      {rebalanceInfo.action === '+' ? '买入' : '卖出'}{' '}
+                      {rebalanceInfo.size.toFixed(4)}?
+                    </p>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => setConfirmingRebalance(false)}
+                        className="cursor-pointer rounded bg-muted px-2 py-1 text-muted-foreground hover:bg-muted/80"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={() => {
+                          rebalanceInfo.onRebalance()
+                          setConfirmingRebalance(false)
+                        }}
+                        className="cursor-pointer rounded bg-yellow-500 px-2 py-1 text-black hover:bg-yellow-400"
+                      >
+                        确认补齐
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           )}
           <button
             onClick={onExecute}

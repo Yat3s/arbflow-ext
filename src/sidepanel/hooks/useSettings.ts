@@ -8,6 +8,8 @@ const STORAGE_KEYS = {
   EXCHANGE_CONFIGS: 'arbflow_exchange_configs',
   GLOBAL_TRADE_INTERVAL: 'arbflow_global_trade_interval',
   CONSECUTIVE_TRIGGER_COUNT: 'arbflow_consecutive_trigger_count',
+  AUTO_RESTART_ON_UNBALANCED: 'arbflow_auto_restart_on_unbalanced',
+  SOUND_ENABLED: 'arbflow_sound_enabled',
 }
 
 const DEFAULT_GLOBAL_TRADE_INTERVAL = 1000
@@ -19,6 +21,8 @@ export function useSettings() {
   const [omniConfig, setOmniConfig] = useState<OmniConfig>(DEFAULT_OMNI_CONFIG)
   const [globalTradeInterval, setGlobalTradeInterval] = useState<number>(DEFAULT_GLOBAL_TRADE_INTERVAL)
   const [consecutiveTriggerCount, setConsecutiveTriggerCount] = useState<number>(DEFAULT_CONSECUTIVE_TRIGGER_COUNT)
+  const [autoRestartOnUnbalanced, setAutoRestartOnUnbalanced] = useState<boolean>(false)
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true)
 
   useEffect(() => {
     const savedSymbols = localStorage.getItem(STORAGE_KEYS.WATCHED_SYMBOLS)
@@ -59,6 +63,16 @@ export function useSettings() {
       if (!isNaN(parsed) && parsed > 0) {
         setConsecutiveTriggerCount(parsed)
       }
+    }
+
+    const savedAutoRestart = localStorage.getItem(STORAGE_KEYS.AUTO_RESTART_ON_UNBALANCED)
+    if (savedAutoRestart) {
+      setAutoRestartOnUnbalanced(savedAutoRestart === 'true')
+    }
+
+    const savedSoundEnabled = localStorage.getItem(STORAGE_KEYS.SOUND_ENABLED)
+    if (savedSoundEnabled) {
+      setSoundEnabled(savedSoundEnabled === 'true')
     }
   }, [])
 
@@ -101,6 +115,16 @@ export function useSettings() {
     localStorage.setItem(STORAGE_KEYS.CONSECUTIVE_TRIGGER_COUNT, String(count))
   }, [])
 
+  const saveAutoRestartOnUnbalanced = useCallback((enabled: boolean) => {
+    setAutoRestartOnUnbalanced(enabled)
+    localStorage.setItem(STORAGE_KEYS.AUTO_RESTART_ON_UNBALANCED, String(enabled))
+  }, [])
+
+  const saveSoundEnabled = useCallback((enabled: boolean) => {
+    setSoundEnabled(enabled)
+    localStorage.setItem(STORAGE_KEYS.SOUND_ENABLED, String(enabled))
+  }, [])
+
   return {
     watchedSymbols,
     saveWatchedSymbols,
@@ -112,6 +136,10 @@ export function useSettings() {
     saveGlobalTradeInterval,
     consecutiveTriggerCount,
     saveConsecutiveTriggerCount,
+    autoRestartOnUnbalanced,
+    saveAutoRestartOnUnbalanced,
+    soundEnabled,
+    saveSoundEnabled,
   }
 }
 
