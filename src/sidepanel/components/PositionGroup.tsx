@@ -3,7 +3,7 @@ import dingSound from '../../assets/ding.mp3'
 import warnSound from '../../assets/warn.wav'
 import { SYMBOL_ICON_MAP } from '../../lib/symbols'
 import type { ExchangeMarketStats, PriceDiff, SymbolState } from '../../lib/types'
-import { formatTime } from '../../lib/utils'
+import { formatTime, roundSize } from '../../lib/utils'
 import { ActionPanel } from './ActionPanel'
 import { PositionItem } from './PositionItem'
 
@@ -50,9 +50,10 @@ interface TradeLog {
 }
 
 const DEFAULT_TRADE_INTERVAL = '1000'
-const STOP_UNBALANCED_INTERVAL = 3000
+const STOP_UNBALANCED_INTERVAL = 4000
 
-const REFRESH_INTERVAL = 3 * 60 * 1000
+const REFRESH_INTERVAL = 10 * 60 * 1000
+const AUTO_REBALANCE_INTERVAL = 10 * 60 * 1000
 
 interface PositionGroupProps {
   symbol: string
@@ -72,6 +73,8 @@ interface PositionGroupProps {
   onRefreshAllExchanges: () => Promise<void>
   autoRestartOnUnbalanced: boolean
   soundEnabled: boolean
+  autoRebalanceSingleSize: boolean
+  globalLastAutoRebalanceTimeRef: React.MutableRefObject<number>
 }
 
 function calculateWeightedPrice(
@@ -151,6 +154,8 @@ export function PositionGroup({
   onRefreshAllExchanges,
   autoRestartOnUnbalanced,
   soundEnabled,
+  autoRebalanceSingleSize,
+  globalLastAutoRebalanceTimeRef,
 }: PositionGroupProps) {
   const savedSettings = loadSymbolSettings(symbol)
   const [tradeSize, setTradeSize] = useState(savedSettings?.tradeSize ?? '')
@@ -206,17 +211,32 @@ export function PositionGroup({
     {} as { [exchangeId: string]: number },
   )
 
+  const executeRebalance = useCallback(
+    (
+      platformId: string,
+      size: number,
+      direction: 'long' | 'short',
+      isAuto = false,
+      onComplete?: () => void,
+    ) => {
+      const prefix = isAuto ? '[自动补齐]' : '[补齐]'
+      addTradeLog(
+        `${prefix} 执行中: 在 ${platformId} ${direction === 'long' ? '买入' : '卖出'} ${size} ${symbol}`,
+      )
+      onExecuteSingleTrade(platformId, symbol, direction, size)
+        .then(() => {
+          addTradeLog(`${prefix} 完成: ${platformId} ${direction === 'long' ? '+' : '-'}${size}`)
+          onComplete?.()
+        })
+        .catch((e: Error) => {
+          addTradeLog(`[错误] ${platformId} ${isAuto ? '自动' : ''}补齐失败: ${e.message}`)
+        })
+    },
+    [symbol, onExecuteSingleTrade],
+  )
+
   const handleRebalance = (platformId: string, size: number, direction: 'long' | 'short') => {
-    addTradeLog(
-      `[补齐] 执行中: 在 ${platformId} ${direction === 'long' ? '买入' : '卖出'} ${size} ${symbol}`,
-    )
-    onExecuteSingleTrade(platformId, symbol, direction, size)
-      .then(() => {
-        addTradeLog(`[补齐] 完成: ${platformId} ${direction === 'long' ? '+' : '-'}${size}`)
-      })
-      .catch((e: Error) => {
-        addTradeLog(`[错误] ${platformId} 补齐失败: ${e.message}`)
-      })
+    executeRebalance(platformId, size, direction, false)
   }
 
   const tryRefreshAllExchanges = useCallback(
@@ -294,10 +314,33 @@ export function PositionGroup({
         if (firstUnbalancedTimeRef.current === null) {
           firstUnbalancedTimeRef.current = now
         } else if (now - firstUnbalancedTimeRef.current >= STOP_UNBALANCED_INTERVAL) {
-          if (autoRestartOnUnbalanced) {
-            tryRefreshAllExchanges(
-              `仓位不对齐持续超过 ${STOP_UNBALANCED_INTERVAL}ms (净仓位: ${netPosition.toFixed(4)})`,
-            )
+          if (autoRestartOnUnbalanced || autoRebalanceSingleSize) {
+            const refreshReason = `仓位不对齐持续超过 ${STOP_UNBALANCED_INTERVAL}ms (净仓位: ${netPosition.toFixed(4)})`
+
+            if (autoRebalanceSingleSize) {
+              const size = parseFloat(tradeSize) || 0
+              const rebalanceSize = roundSize(Math.abs(netPosition))
+              const timeSinceLastAutoRebalance = now - globalLastAutoRebalanceTimeRef.current
+
+              if (
+                size > 0 &&
+                Math.abs(rebalanceSize - size) < 0.0001 &&
+                timeSinceLastAutoRebalance >= AUTO_REBALANCE_INTERVAL
+              ) {
+                globalLastAutoRebalanceTimeRef.current = now
+                const direction: 'long' | 'short' = netPosition < 0 ? 'long' : 'short'
+                const platformId = priceDiff.platform2Id
+                executeRebalance(platformId, rebalanceSize, direction, true, () => {
+                  if (autoRestartOnUnbalanced) {
+                    tryRefreshAllExchanges(refreshReason)
+                  }
+                })
+              } else if (autoRestartOnUnbalanced) {
+                tryRefreshAllExchanges(refreshReason)
+              }
+            } else if (autoRestartOnUnbalanced) {
+              tryRefreshAllExchanges(refreshReason)
+            }
           } else {
             if (monitor2to1.isMonitoring) {
               setMonitor2to1((prev) => ({ ...prev, isMonitoring: false }))
@@ -441,6 +484,8 @@ export function PositionGroup({
     tryRefreshAllExchanges,
     autoRestartOnUnbalanced,
     soundEnabled,
+    autoRebalanceSingleSize,
+    executeRebalance,
   ])
 
   const isAnyMonitoring = monitor2to1.isMonitoring || monitor1to2.isMonitoring
