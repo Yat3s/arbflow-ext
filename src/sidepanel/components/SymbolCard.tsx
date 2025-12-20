@@ -25,10 +25,6 @@ interface TradeLog {
   message: string
 }
 
-const DEFAULT_TRADE_INTERVAL = '1000'
-const STOP_UNBALANCED_INTERVAL = 3000
-const REFRESH_INTERVAL = 3 * 60 * 1000
-
 interface SymbolCardProps {
   symbol: string
   symbolState: SymbolState | undefined
@@ -42,8 +38,16 @@ interface SymbolCardProps {
   consecutiveTriggerCount: number
   onRefreshAllExchanges: () => Promise<void>
   autoRestartOnUnbalanced: boolean
+  autoRebalanceOnError: boolean
   soundEnabled: boolean
 }
+
+const DEFAULT_TRADE_INTERVAL = '1000'
+const REFRESH_INTERVAL = 5 * 60 * 1000
+const STOP_MONITOR_IF_UNBALANCED_TIME = 10000
+
+const AUTO_REBALANCE_DELAY = 3000
+const AUTO_REBALANCE_COOLDOWN = 5 * 60 * 1000
 
 export function SymbolCard({
   symbol,
@@ -56,6 +60,7 @@ export function SymbolCard({
   consecutiveTriggerCount,
   onRefreshAllExchanges,
   autoRestartOnUnbalanced,
+  autoRebalanceOnError,
   soundEnabled,
 }: SymbolCardProps) {
   // ========== State initialization from localStorage ==========
@@ -90,6 +95,7 @@ export function SymbolCard({
   const firstUnbalancedTimeRef = useRef<number | null>(null)
   const isRefreshingRef = useRef(false)
   const logIdRef = useRef(0)
+  const lastAutoRebalanceTimeRef = useRef<number>(0)
 
   // ========== Derived data from symbolState ==========
   const positions = symbolState?.positions?.filter((p) => p.position !== 0) || []
@@ -185,15 +191,19 @@ export function SymbolCard({
    *   - skipPositionCheck: bypass position limits check (for rebalance trades)
    *   - skipCooldown: bypass cooldown checks (for manual trades)
    *   - logPrefix: prefix for trade logs
+   *   - onError: callback for handling errors (used for auto-rebalance)
    */
+  type Trade = { symbol: string; direction: 'long' | 'short'; size: number; platform: string }
+
   const handleTrades = useCallback(
     (
-      trades: { symbol: string; direction: 'long' | 'short'; size: number; platform: string }[],
+      trades: Trade[],
       options?: {
         direction?: '2to1' | '1to2'
         skipPositionCheck?: boolean
         skipCooldown?: boolean
         logPrefix?: string
+        onError?: (errorMessage: string, trades: Trade[]) => void
       },
     ): boolean => {
       if (!priceDiff || trades.length === 0) return false
@@ -255,6 +265,7 @@ export function SymbolCard({
         .catch((e: Error) => {
           addTradeLog(`[错误] ${tradeDesc} 交易失败: ${e.message}`)
           if (soundEnabled) playWarn()
+          options?.onError?.(e.message, trades)
         })
 
       return true
@@ -279,6 +290,98 @@ export function SymbolCard({
       logPrefix: '[补齐]',
     })
   }
+
+  /**
+   * Attempt to auto-rebalance after a trade error.
+   * Calculates rebalance size based on actual net position, not the failed trade size.
+   * This handles accumulated imbalance from multiple failures during cooldown.
+   *
+   * Safety checks:
+   * 1. Wait 3 seconds before executing (API rate limit)
+   * 2. Position limits are checked by handleTrades
+   * 3. 5-minute cooldown between auto-rebalances
+   * 4. Rebalance size based on actual net position
+   */
+  const tryAutoRebalance = useCallback(
+    (
+      errorMessage: string,
+      trades: { symbol: string; direction: 'long' | 'short'; size: number; platform: string }[],
+    ) => {
+      if (!autoRebalanceOnError || !priceDiff) return
+
+      // Check cooldown (5 minutes)
+      const now = Date.now()
+      if (now - lastAutoRebalanceTimeRef.current < AUTO_REBALANCE_COOLDOWN) {
+        addTradeLog(`[自动补齐] 已记录，将在冷却结束后根据实际仓位补齐`)
+        return
+      }
+
+      // Only handle arbitrage trades (2 platforms)
+      if (trades.length !== 2) return
+
+      // Parse failed platform from error message: "[PLATFORM] error message"
+      const match = errorMessage.match(/^\[([^\]]+)\]/)
+      if (!match) return
+      const failedPlatform = match[1]
+
+      addTradeLog(
+        `[自动补齐] ${failedPlatform} 失败，将在 ${AUTO_REBALANCE_DELAY / 1000} 秒后根据实际仓位补齐`,
+      )
+
+      // Wait before executing (API rate limit)
+      setTimeout(() => {
+        // Check cooldown again in case another rebalance happened
+        if (Date.now() - lastAutoRebalanceTimeRef.current < AUTO_REBALANCE_COOLDOWN) {
+          addTradeLog(`[自动补齐] 跳过: 冷却时间内已有其他补齐操作`)
+          return
+        }
+
+        // Calculate actual net position at execution time
+        const currentPositions = symbolState?.positions?.filter((p) => p.position !== 0) || []
+        const currentNetPosition = currentPositions.reduce((sum, p) => {
+          const size = p.position || 0
+          return sum + (p.side === 'long' ? size : -size)
+        }, 0)
+
+        // Check if still unbalanced
+        if (Math.abs(currentNetPosition) <= 0.0001) {
+          addTradeLog(`[自动补齐] 跳过: 仓位已平衡 (净仓位: ${currentNetPosition.toFixed(4)})`)
+          return
+        }
+
+        const rebalanceSize = Math.round(Math.abs(currentNetPosition) * 10000) / 10000
+        // netPosition < 0 means we need to long, netPosition > 0 means we need to short
+        const rebalanceDirection: 'long' | 'short' = currentNetPosition < 0 ? 'long' : 'short'
+
+        // Determine which platform to rebalance on (the one that didn't fail)
+        const successfulTrade = trades.find((t) => t.platform !== failedPlatform)
+        if (!successfulTrade) {
+          addTradeLog(`[自动补齐] 跳过: 无法确定补齐平台`)
+          return
+        }
+
+        const rebalanceTrade = {
+          symbol,
+          direction: rebalanceDirection,
+          size: rebalanceSize,
+          platform: successfulTrade.platform,
+        }
+
+        // Use handleTrades to ensure position limits are checked
+        const executed = handleTrades([rebalanceTrade], {
+          skipCooldown: true,
+          logPrefix: '[自动补齐]',
+        })
+
+        if (executed) {
+          lastAutoRebalanceTimeRef.current = Date.now()
+        } else {
+          addTradeLog(`[自动补齐] 跳过: 仓位限制 (净仓位: ${currentNetPosition.toFixed(4)})`)
+        }
+      }, AUTO_REBALANCE_DELAY)
+    },
+    [autoRebalanceOnError, priceDiff, symbol, symbolState, handleTrades],
+  )
 
   const handleExecute = (direction: '1to2' | '2to1') => {
     const size = parseFloat(tradeSize) || 0
@@ -337,10 +440,10 @@ export function SymbolCard({
       if (isUnbalanced) {
         if (firstUnbalancedTimeRef.current === null) {
           firstUnbalancedTimeRef.current = now
-        } else if (now - firstUnbalancedTimeRef.current >= STOP_UNBALANCED_INTERVAL) {
+        } else if (now - firstUnbalancedTimeRef.current >= STOP_MONITOR_IF_UNBALANCED_TIME) {
           if (autoRestartOnUnbalanced) {
             tryRefreshAllExchanges(
-              `仓位不对齐持续超过 ${STOP_UNBALANCED_INTERVAL}ms (净仓位: ${netPosition.toFixed(4)})`,
+              `仓位不对齐持续超过 ${STOP_MONITOR_IF_UNBALANCED_TIME}ms (净仓位: ${netPosition.toFixed(4)})`,
             )
           } else {
             // Stop all monitoring when positions stay unbalanced too long
@@ -351,7 +454,7 @@ export function SymbolCard({
               setMonitor1to2((prev) => ({ ...prev, isMonitoring: false }))
             }
             addTradeLog(
-              `[停止] 仓位不对齐持续超过 ${STOP_UNBALANCED_INTERVAL}ms (净仓位: ${netPosition.toFixed(4)})，自动交易已停止`,
+              `[停止] 仓位不对齐持续超过 ${STOP_MONITOR_IF_UNBALANCED_TIME}ms (净仓位: ${netPosition.toFixed(4)})，自动交易已停止`,
             )
           }
           firstUnbalancedTimeRef.current = null
@@ -409,13 +512,14 @@ export function SymbolCard({
 
       // Execute trade if consecutive trigger count is met
       if (consecutiveTriggerRef.current[direction] >= consecutiveTriggerCount) {
-        const executed = handleTrades(
-          [
-            { symbol, direction: 'short', size, platform: sellPlatformId },
-            { symbol, direction: 'long', size, platform: buyPlatformId },
-          ],
-          { direction },
-        )
+        const trades = [
+          { symbol, direction: 'short' as const, size, platform: sellPlatformId },
+          { symbol, direction: 'long' as const, size, platform: buyPlatformId },
+        ]
+        const executed = handleTrades(trades, {
+          direction,
+          onError: (errMsg) => tryAutoRebalance(errMsg, trades),
+        })
         if (executed) {
           consecutiveTriggerRef.current[direction] = 0
         }
@@ -452,6 +556,7 @@ export function SymbolCard({
     tryRefreshAllExchanges,
     autoRestartOnUnbalanced,
     handleTrades,
+    tryAutoRebalance,
   ])
 
   // ========== UI helpers ==========

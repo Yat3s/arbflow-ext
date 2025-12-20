@@ -9,6 +9,7 @@ const STORAGE_KEYS = {
   GLOBAL_TRADE_INTERVAL: 'arbflow_global_trade_interval',
   CONSECUTIVE_TRIGGER_COUNT: 'arbflow_consecutive_trigger_count',
   AUTO_RESTART_ON_UNBALANCED: 'arbflow_auto_restart_on_unbalanced',
+  AUTO_REBALANCE_ON_ERROR: 'arbflow_auto_rebalance_on_error',
   SOUND_ENABLED: 'arbflow_sound_enabled',
 }
 
@@ -22,6 +23,7 @@ export function useSettings() {
   const [globalTradeInterval, setGlobalTradeInterval] = useState<number>(DEFAULT_GLOBAL_TRADE_INTERVAL)
   const [consecutiveTriggerCount, setConsecutiveTriggerCount] = useState<number>(DEFAULT_CONSECUTIVE_TRIGGER_COUNT)
   const [autoRestartOnUnbalanced, setAutoRestartOnUnbalanced] = useState<boolean>(false)
+  const [autoRebalanceOnError, setAutoRebalanceOnError] = useState<boolean>(false)
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true)
 
   useEffect(() => {
@@ -68,6 +70,11 @@ export function useSettings() {
     const savedAutoRestart = localStorage.getItem(STORAGE_KEYS.AUTO_RESTART_ON_UNBALANCED)
     if (savedAutoRestart) {
       setAutoRestartOnUnbalanced(savedAutoRestart === 'true')
+    }
+
+    const savedAutoRebalance = localStorage.getItem(STORAGE_KEYS.AUTO_REBALANCE_ON_ERROR)
+    if (savedAutoRebalance) {
+      setAutoRebalanceOnError(savedAutoRebalance === 'true')
     }
 
     const savedSoundEnabled = localStorage.getItem(STORAGE_KEYS.SOUND_ENABLED)
@@ -120,6 +127,11 @@ export function useSettings() {
     localStorage.setItem(STORAGE_KEYS.AUTO_RESTART_ON_UNBALANCED, String(enabled))
   }, [])
 
+  const saveAutoRebalanceOnError = useCallback((enabled: boolean) => {
+    setAutoRebalanceOnError(enabled)
+    localStorage.setItem(STORAGE_KEYS.AUTO_REBALANCE_ON_ERROR, String(enabled))
+  }, [])
+
   const saveSoundEnabled = useCallback((enabled: boolean) => {
     setSoundEnabled(enabled)
     localStorage.setItem(STORAGE_KEYS.SOUND_ENABLED, String(enabled))
@@ -138,6 +150,8 @@ export function useSettings() {
     saveConsecutiveTriggerCount,
     autoRestartOnUnbalanced,
     saveAutoRestartOnUnbalanced,
+    autoRebalanceOnError,
+    saveAutoRebalanceOnError,
     soundEnabled,
     saveSoundEnabled,
   }

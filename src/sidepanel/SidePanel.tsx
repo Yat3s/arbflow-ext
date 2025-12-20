@@ -52,6 +52,8 @@ export function SidePanel() {
     saveConsecutiveTriggerCount,
     autoRestartOnUnbalanced,
     saveAutoRestartOnUnbalanced,
+    autoRebalanceOnError,
+    saveAutoRebalanceOnError,
     soundEnabled,
     saveSoundEnabled,
   } = useSettings()
@@ -216,6 +218,21 @@ export function SidePanel() {
               />
             </button>
           </label>
+          <label className="flex cursor-pointer items-center gap-2">
+            <span className="text-sm text-muted-foreground">交易失败自补齐</span>
+            <button
+              onClick={() => saveAutoRebalanceOnError(!autoRebalanceOnError)}
+              className={`relative h-5 w-9 rounded-full transition-colors ${
+                autoRebalanceOnError ? 'bg-primary' : 'bg-muted-foreground/30'
+              }`}
+            >
+              <span
+                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                  autoRebalanceOnError ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </label>
         </div>
       </div>
 
@@ -240,6 +257,7 @@ export function SidePanel() {
                   consecutiveTriggerCount={consecutiveTriggerCount}
                   onRefreshAllExchanges={refreshAllExchanges}
                   autoRestartOnUnbalanced={autoRestartOnUnbalanced}
+                  autoRebalanceOnError={autoRebalanceOnError}
                   soundEnabled={soundEnabled}
                 />
               ))}
