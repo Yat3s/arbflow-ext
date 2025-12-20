@@ -1,40 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dingSound from '../../assets/ding.mp3'
 import warnSound from '../../assets/warn.wav'
+import { calculatePriceDiff } from '../../lib/price'
+import { loadSymbolSettings, saveSymbolSettings, type SymbolSettings } from '../../lib/storage'
 import { SYMBOL_ICON_MAP } from '../../lib/symbols'
-import type { ExchangeMarketStats, PriceDiff, SymbolState } from '../../lib/types'
+import type { SymbolState } from '../../lib/types'
 import { formatTime } from '../../lib/utils'
 import { ActionPanel } from './ActionPanel'
 import { PositionItem } from './PositionItem'
 
 const playDing = () => new Audio(dingSound).play().catch(() => {})
 const playWarn = () => new Audio(warnSound).play().catch(() => {})
-
-interface SymbolSettings {
-  tradeSize: string
-  positionMin: string
-  positionMax: string
-  tradeInterval: string
-  monitor2to1: { condition: '>' | '<'; unit: 'percent' | 'usdt'; threshold: string }
-  monitor1to2: { condition: '>' | '<'; unit: 'percent' | 'usdt'; threshold: string }
-}
-
-function loadSymbolSettings(symbol: string): SymbolSettings | null {
-  try {
-    const stored = localStorage.getItem(`arbflow_symbol_${symbol}`)
-    return stored ? JSON.parse(stored) : null
-  } catch {
-    return null
-  }
-}
-
-function saveSymbolSettings(symbol: string, settings: SymbolSettings) {
-  try {
-    localStorage.setItem(`arbflow_symbol_${symbol}`, JSON.stringify(settings))
-  } catch {
-    // ignore
-  }
-}
 
 interface MonitorState {
   condition: '>' | '<'
@@ -51,19 +27,14 @@ interface TradeLog {
 
 const DEFAULT_TRADE_INTERVAL = '1000'
 const STOP_UNBALANCED_INTERVAL = 3000
-
 const REFRESH_INTERVAL = 3 * 60 * 1000
 
-interface PositionGroupProps {
+interface SymbolCardProps {
   symbol: string
   symbolState: SymbolState | undefined
   exchanges: { id: string; name: string; color: string }[]
-  onExecuteArbitrage: (symbol: string, direction: '1to2' | '2to1', size: number) => Promise<void>
-  onExecuteSingleTrade: (
-    exchangeId: string,
-    symbol: string,
-    direction: 'long' | 'short',
-    size: number,
+  onDoTrades: (
+    trades: { symbol: string; direction: 'long' | 'short'; size: number; platform: string }[],
   ) => Promise<void>
   globalTradeInterval: number
   globalLastTradeTimeRef: React.MutableRefObject<number>
@@ -74,76 +45,11 @@ interface PositionGroupProps {
   soundEnabled: boolean
 }
 
-function calculateWeightedPrice(
-  orders: { price: number; quantity: number }[],
-  targetSize: number,
-): number | null {
-  if (!orders || orders.length === 0) return null
-  if (targetSize <= 0) return orders[0]?.price ?? null
-
-  let remainingSize = targetSize
-  let totalValue = 0
-  let totalQuantity = 0
-
-  for (const order of orders) {
-    const fillQuantity = Math.min(remainingSize, order.quantity)
-    totalValue += fillQuantity * order.price
-    totalQuantity += fillQuantity
-    remainingSize -= fillQuantity
-
-    if (remainingSize <= 0) break
-  }
-
-  if (totalQuantity === 0) return null
-  return totalValue / totalQuantity
-}
-
-function calculatePriceDiff(
-  stats: ExchangeMarketStats[],
-  exchanges: { id: string; name: string; color: string }[],
-  tradeSize: number,
-): PriceDiff | null {
-  if (stats.length < 2) return null
-
-  const stat1 = stats[0]
-  const stat2 = stats[1]
-
-  const platform1Ask = calculateWeightedPrice(stat1?.orderBook?.asks || [], tradeSize)
-  const platform1Bid = calculateWeightedPrice(stat1?.orderBook?.bids || [], tradeSize)
-  const platform2Ask = calculateWeightedPrice(stat2?.orderBook?.asks || [], tradeSize)
-  const platform2Bid = calculateWeightedPrice(stat2?.orderBook?.bids || [], tradeSize)
-
-  if (!platform1Ask || !platform1Bid || !platform2Ask || !platform2Bid) {
-    return null
-  }
-
-  const exchange1 = exchanges.find((e) => e.id === stat1.exchangeId)
-  const exchange2 = exchanges.find((e) => e.id === stat2.exchangeId)
-
-  return {
-    platform1Id: stat1.exchangeId,
-    platform2Id: stat2.exchangeId,
-    platform1Name: exchange1?.name || stat1.exchangeId,
-    platform2Name: exchange2?.name || stat2.exchangeId,
-    platform1Color: exchange1?.color || '#6366f1',
-    platform2Color: exchange2?.color || '#f59e0b',
-    spread1to2: platform2Bid - platform1Ask,
-    spread2to1: platform1Bid - platform2Ask,
-    platform1Ask,
-    platform2Ask,
-    platform1Bid,
-    platform2Bid,
-    platform1LastUpdated: stat1.lastUpdated,
-    platform2LastUpdated: stat2.lastUpdated,
-  }
-}
-
-export function PositionGroup({
+export function SymbolCard({
   symbol,
   symbolState,
   exchanges,
-  onExecuteArbitrage,
-  onExecuteSingleTrade,
+  onDoTrades,
   globalTradeInterval,
   globalLastTradeTimeRef,
   globalLastRefreshTimeRef,
@@ -151,7 +57,8 @@ export function PositionGroup({
   onRefreshAllExchanges,
   autoRestartOnUnbalanced,
   soundEnabled,
-}: PositionGroupProps) {
+}: SymbolCardProps) {
+  // ========== State initialization from localStorage ==========
   const savedSettings = loadSymbolSettings(symbol)
   const [tradeSize, setTradeSize] = useState(savedSettings?.tradeSize ?? '')
   const [positionMin, setPositionMin] = useState(savedSettings?.positionMin ?? '')
@@ -173,28 +80,35 @@ export function PositionGroup({
   })
   const [tradeLogs, setTradeLogs] = useState<TradeLog[]>([])
   const [isCollapsed, setIsCollapsed] = useState(false)
+
+  // ========== Refs for tracking trade timing ==========
   const lastTradeTimeRef = useRef<{ '2to1': number; '1to2': number }>({ '2to1': 0, '1to2': 0 })
-  const consecutiveTriggerRef = useRef<{ '2to1': number; '1to2': number }>({ '2to1': 0, '1to2': 0 })
+  const consecutiveTriggerRef = useRef<{ '2to1': number; '1to2': number }>({
+    '2to1': 0,
+    '1to2': 0,
+  })
   const firstUnbalancedTimeRef = useRef<number | null>(null)
   const isRefreshingRef = useRef(false)
   const logIdRef = useRef(0)
 
+  // ========== Derived data from symbolState ==========
   const positions = symbolState?.positions?.filter((p) => p.position !== 0) || []
   const stats = symbolState?.exchangeMarketStats || []
   const hasPositions = positions.length > 0
-
   const sortedStats = [...stats].sort((a, b) => a.exchangeId.localeCompare(b.exchangeId))
   const tradeSizeNum = parseFloat(tradeSize) || 0
   const priceDiff = calculatePriceDiff(sortedStats, exchanges, tradeSizeNum)
 
   const totalPnl = positions.reduce((sum, p) => sum + (p.unrealizedPnl || 0) + (p.funding || 0), 0)
 
+  // Net position across all exchanges (positive = net long, negative = net short)
   const netPosition = positions.reduce((sum, p) => {
     const size = p.position || 0
     return sum + (p.side === 'long' ? size : -size)
   }, 0)
   const isUnbalanced = Math.abs(netPosition) > 0.0001
 
+  // Position by exchange (signed: positive = long, negative = short)
   const positionByExchange = positions.reduce(
     (acc, p) => {
       if (!p.exchangeId) return acc
@@ -206,19 +120,21 @@ export function PositionGroup({
     {} as { [exchangeId: string]: number },
   )
 
-  const handleRebalance = (platformId: string, size: number, direction: 'long' | 'short') => {
-    addTradeLog(
-      `[补齐] 执行中: 在 ${platformId} ${direction === 'long' ? '买入' : '卖出'} ${size} ${symbol}`,
-    )
-    onExecuteSingleTrade(platformId, symbol, direction, size)
-      .then(() => {
-        addTradeLog(`[补齐] 完成: ${platformId} ${direction === 'long' ? '+' : '-'}${size}`)
-      })
-      .catch((e: Error) => {
-        addTradeLog(`[错误] ${platformId} 补齐失败: ${e.message}`)
-      })
+  const isAnyMonitoring = monitor2to1.isMonitoring || monitor1to2.isMonitoring
+
+  // ========== Helper functions ==========
+  const addTradeLog = (message: string) => {
+    logIdRef.current += 1
+    setTradeLogs((prev) => [
+      { id: logIdRef.current, timestamp: new Date(), message },
+      ...prev.slice(0, 49),
+    ])
   }
 
+  /**
+   * Attempt to refresh all exchange connections if not already refreshing
+   * and enough time has passed since last refresh
+   */
   const tryRefreshAllExchanges = useCallback(
     (reason: string) => {
       const now = Date.now()
@@ -230,12 +146,8 @@ export function PositionGroup({
       globalLastRefreshTimeRef.current = now
       addTradeLog(`[刷新] ${reason}，正在刷新交易所连接...`)
       onRefreshAllExchanges()
-        .then(() => {
-          addTradeLog(`[刷新] 交易所连接已刷新`)
-        })
-        .catch((e: Error) => {
-          addTradeLog(`[错误] 刷新失败: ${e.message}`)
-        })
+        .then(() => addTradeLog(`[刷新] 交易所连接已刷新`))
+        .catch((e: Error) => addTradeLog(`[错误] 刷新失败: ${e.message}`))
         .finally(() => {
           isRefreshingRef.current = false
         })
@@ -243,17 +155,154 @@ export function PositionGroup({
     [onRefreshAllExchanges],
   )
 
+  // ========== Trade handlers ==========
+
+  /**
+   * Calculate the position delta on platform1 from all trades.
+   * For arbitrage trades (both platforms), we only count platform1's direct change.
+   * For single platform trades, we also only count platform1's direct change.
+   * The position limits are set for platform1, so we only track platform1's actual position.
+   */
+  const calculatePlatform1Delta = useCallback(
+    (trades: { direction: 'long' | 'short'; size: number; platform: string }[]): number => {
+      if (!priceDiff) return 0
+      return trades.reduce((delta, trade) => {
+        const sign = trade.direction === 'long' ? 1 : -1
+        if (trade.platform === priceDiff.platform1Id) {
+          return delta + sign * trade.size
+        }
+        return delta
+      }, 0)
+    },
+    [priceDiff],
+  )
+
+  /**
+   * Core trade execution with position limits check and cooldown management
+   * @param trades - Array of trades to execute
+   * @param options - Optional config for the trade
+   *   - direction: used for tracking local cooldown per direction
+   *   - skipPositionCheck: bypass position limits check (for rebalance trades)
+   *   - skipCooldown: bypass cooldown checks (for manual trades)
+   *   - logPrefix: prefix for trade logs
+   */
+  const handleTrades = useCallback(
+    (
+      trades: { symbol: string; direction: 'long' | 'short'; size: number; platform: string }[],
+      options?: {
+        direction?: '2to1' | '1to2'
+        skipPositionCheck?: boolean
+        skipCooldown?: boolean
+        logPrefix?: string
+      },
+    ): boolean => {
+      if (!priceDiff || trades.length === 0) return false
+
+      const now = Date.now()
+      const interval = parseInt(tradeInterval) || 500
+      const minPos = parseFloat(positionMin) || 0
+      const maxPos = parseFloat(positionMax) || 0
+      const currentPlatform1Pos = positionByExchange[priceDiff.platform1Id] || 0
+      const direction = options?.direction
+      const skipPositionCheck = options?.skipPositionCheck ?? false
+      const skipCooldown = options?.skipCooldown ?? false
+      const logPrefix = options?.logPrefix ?? '[交易]'
+
+      // Calculate platform1 position delta from trades
+      const positionDelta = calculatePlatform1Delta(trades)
+
+      // Check position limits (only for platform1's direct position change)
+      if (!skipPositionCheck && positionDelta !== 0) {
+        const newPlatform1Pos = currentPlatform1Pos + positionDelta
+        const isWithinLimits = newPlatform1Pos >= minPos && newPlatform1Pos <= maxPos
+        // Allow trading if it moves position back towards limits
+        const isMovingTowardsLimits =
+          (currentPlatform1Pos > maxPos && positionDelta < 0) ||
+          (currentPlatform1Pos < minPos && positionDelta > 0)
+        const canTrade = isWithinLimits || isMovingTowardsLimits
+
+        if (!canTrade) {
+          return false
+        }
+      }
+
+      // Check cooldown (skip for manual trades)
+      if (!skipCooldown && direction) {
+        const timeSinceLastLocalTrade = now - lastTradeTimeRef.current[direction]
+        const timeSinceLastGlobalTrade = now - globalLastTradeTimeRef.current
+
+        if (timeSinceLastLocalTrade < interval || timeSinceLastGlobalTrade < globalTradeInterval) {
+          return false
+        }
+
+        // Update cooldown timestamps
+        lastTradeTimeRef.current[direction] = now
+        globalLastTradeTimeRef.current = now
+      }
+
+      // Build log message
+      const tradeDesc = trades
+        .map((t) => `${t.direction === 'long' ? '+' : '-'}${t.platform}`)
+        .join('')
+
+      addTradeLog(`${logPrefix} 执行中: ${tradeDesc} ${trades[0].size} ${symbol}`)
+
+      onDoTrades(trades)
+        .then(() => {
+          addTradeLog(`${logPrefix} 完成: ${tradeDesc}`)
+          if (soundEnabled) playDing()
+        })
+        .catch((e: Error) => {
+          addTradeLog(`[错误] ${tradeDesc} 交易失败: ${e.message}`)
+          if (soundEnabled) playWarn()
+        })
+
+      return true
+    },
+    [
+      priceDiff,
+      tradeInterval,
+      positionMin,
+      positionMax,
+      positionByExchange,
+      globalTradeInterval,
+      symbol,
+      onDoTrades,
+      soundEnabled,
+      calculatePlatform1Delta,
+    ],
+  )
+
+  const handleRebalance = (platformId: string, size: number, direction: 'long' | 'short') => {
+    handleTrades([{ symbol, direction, size, platform: platformId }], {
+      skipCooldown: true,
+      logPrefix: '[补齐]',
+    })
+  }
+
   const handleExecute = (direction: '1to2' | '2to1') => {
     const size = parseFloat(tradeSize) || 0
-    if (size <= 0) {
+    if (size <= 0 || !priceDiff) {
       alert('请输入有效的交易数量')
       return
     }
-    onExecuteArbitrage(symbol, direction, size)
+    const { platform1Id, platform2Id } = priceDiff
+    const trades =
+      direction === '2to1'
+        ? [
+            { symbol, direction: 'short' as const, size, platform: platform1Id },
+            { symbol, direction: 'long' as const, size, platform: platform2Id },
+          ]
+        : [
+            { symbol, direction: 'long' as const, size, platform: platform1Id },
+            { symbol, direction: 'short' as const, size, platform: platform2Id },
+          ]
+    handleTrades(trades, { skipCooldown: true, skipPositionCheck: true })
   }
 
-  const saveSettings = useCallback(() => {
-    saveSymbolSettings(symbol, {
+  // ========== Settings persistence ==========
+  const persistSettings = useCallback(() => {
+    const settings: SymbolSettings = {
       tradeSize,
       positionMin,
       positionMax,
@@ -268,28 +317,23 @@ export function PositionGroup({
         unit: monitor1to2.unit,
         threshold: monitor1to2.threshold,
       },
-    })
+    }
+    saveSymbolSettings(symbol, settings)
   }, [symbol, tradeSize, positionMin, positionMax, tradeInterval, monitor2to1, monitor1to2])
 
   useEffect(() => {
-    saveSettings()
-  }, [saveSettings])
+    persistSettings()
+  }, [persistSettings])
 
-  const addTradeLog = (message: string) => {
-    logIdRef.current += 1
-    setTradeLogs((prev) => [
-      { id: logIdRef.current, timestamp: new Date(), message },
-      ...prev.slice(0, 49),
-    ])
-  }
-
+  // ========== Auto-trading monitor logic ==========
   useEffect(() => {
     if (!priceDiff) return
 
     const now = Date.now()
-    const interval = parseInt(tradeInterval) || 500
 
+    // Check if monitoring is active
     if (monitor2to1.isMonitoring || monitor1to2.isMonitoring) {
+      // Handle unbalanced positions - stop monitoring or trigger refresh
       if (isUnbalanced) {
         if (firstUnbalancedTimeRef.current === null) {
           firstUnbalancedTimeRef.current = now
@@ -299,6 +343,7 @@ export function PositionGroup({
               `仓位不对齐持续超过 ${STOP_UNBALANCED_INTERVAL}ms (净仓位: ${netPosition.toFixed(4)})`,
             )
           } else {
+            // Stop all monitoring when positions stay unbalanced too long
             if (monitor2to1.isMonitoring) {
               setMonitor2to1((prev) => ({ ...prev, isMonitoring: false }))
             }
@@ -316,6 +361,7 @@ export function PositionGroup({
         firstUnbalancedTimeRef.current = null
       }
 
+      // Check for stale price data and trigger refresh if needed
       const t1 = formatTime(priceDiff.platform1LastUpdated)
       const t2 = formatTime(priceDiff.platform2LastUpdated)
       const hasSkew = t1.skew || t2.skew
@@ -328,100 +374,71 @@ export function PositionGroup({
     }
 
     const size = parseFloat(tradeSize) || 0
-    const minPos = parseFloat(positionMin) || 0
-    const maxPos = parseFloat(positionMax) || 0
-    const currentPlatform1Pos = positionByExchange[priceDiff.platform1Id] || 0
 
-    const processDirection = (
+    /**
+     * Process a single arbitrage direction:
+     * - Check if spread condition is met
+     * - Track consecutive triggers to avoid noise
+     * - Execute trade via handleTrades (which handles position limits and cooldown)
+     */
+    const processTradePair = (
       direction: '2to1' | '1to2',
       monitor: MonitorState,
       spread: number,
       refPrice: number,
       sellPlatformId: string,
       buyPlatformId: string,
-      sellPrice: number,
-      buyPrice: number,
-      positionDelta: number,
     ) => {
       if (!monitor.isMonitoring || size <= 0) {
         consecutiveTriggerRef.current[direction] = 0
         return
       }
 
+      // Check spread threshold condition
       const threshold = parseFloat(monitor.threshold) || 0
       const compareValue = monitor.unit === 'percent' ? (spread / refPrice) * 100 : spread
       const conditionMet =
         monitor.condition === '>' ? compareValue > threshold : compareValue < threshold
 
+      // Track consecutive triggers to filter out noise
       if (conditionMet) {
         consecutiveTriggerRef.current[direction] += 1
       } else {
         consecutiveTriggerRef.current[direction] = 0
       }
 
-      const newPlatform1Pos = currentPlatform1Pos + positionDelta
-
-      const isWithinLimits = newPlatform1Pos >= minPos && newPlatform1Pos <= maxPos
-      const isMovingTowardsLimits =
-        (currentPlatform1Pos > maxPos && positionDelta < 0) ||
-        (currentPlatform1Pos < minPos && positionDelta > 0)
-      const canTrade = isWithinLimits || isMovingTowardsLimits
-
-      const timeSinceLastLocalTrade = now - lastTradeTimeRef.current[direction]
-      const timeSinceLastGlobalTrade = now - globalLastTradeTimeRef.current
-
-      if (
-        consecutiveTriggerRef.current[direction] >= consecutiveTriggerCount &&
-        timeSinceLastLocalTrade >= interval &&
-        timeSinceLastGlobalTrade >= globalTradeInterval
-      ) {
-        lastTradeTimeRef.current[direction] = now
-        globalLastTradeTimeRef.current = now
-        consecutiveTriggerRef.current[direction] = 0
-
-        if (canTrade) {
-          addTradeLog(
-            `[交易] 执行中: 在 ${sellPlatformId} 卖出 ${size} ${symbol}(${sellPrice.toFixed(2)}), 在 ${buyPlatformId} 买入 ${size} ${symbol}(${buyPrice.toFixed(2)})`,
-          )
-          onExecuteArbitrage(symbol, direction, size)
-            .then(() => {
-              addTradeLog(`[交易] 完成: -${sellPlatformId}+${buyPlatformId}`)
-              if (soundEnabled) playDing()
-            })
-            .catch((e: Error) => {
-              addTradeLog(`[错误] -${sellPlatformId}+${buyPlatformId} 交易失败: ${e.message}`)
-              if (soundEnabled) playWarn()
-            })
-        } else {
-          // addTradeLog(
-          //   `[跳过] 超出持仓限制: ${priceDiff.platform1Id} 当前=${currentPlatform1Pos.toFixed(4)}, 交易后=${newPlatform1Pos.toFixed(4)}, 限制=[${minPos}, ${maxPos}]`,
-          // )
+      // Execute trade if consecutive trigger count is met
+      if (consecutiveTriggerRef.current[direction] >= consecutiveTriggerCount) {
+        const executed = handleTrades(
+          [
+            { symbol, direction: 'short', size, platform: sellPlatformId },
+            { symbol, direction: 'long', size, platform: buyPlatformId },
+          ],
+          { direction },
+        )
+        if (executed) {
+          consecutiveTriggerRef.current[direction] = 0
         }
       }
     }
 
-    processDirection(
+    // Process both arbitrage directions
+    processTradePair(
       '2to1',
       monitor2to1,
       priceDiff.spread2to1,
       priceDiff.platform2Ask,
-      priceDiff.platform1Id,
-      priceDiff.platform2Id,
-      priceDiff.platform1Bid,
-      priceDiff.platform2Ask,
-      -size,
+      priceDiff.platform1Id, // sell
+      priceDiff.platform2Id, // buy
     )
 
-    processDirection(
+    processTradePair(
       '1to2',
       monitor1to2,
       priceDiff.spread1to2,
       priceDiff.platform1Ask,
-      priceDiff.platform2Id,
-      priceDiff.platform1Id,
-      priceDiff.platform2Bid,
-      priceDiff.platform1Ask,
-      size,
+      priceDiff.platform2Id, // sell
+      priceDiff.platform1Id, // buy
     )
   }, [
     priceDiff,
@@ -429,22 +446,15 @@ export function PositionGroup({
     monitor1to2,
     tradeSize,
     symbol,
-    positionMin,
-    positionMax,
-    tradeInterval,
-    positionByExchange,
     isUnbalanced,
     netPosition,
-    onExecuteArbitrage,
-    globalTradeInterval,
     consecutiveTriggerCount,
     tryRefreshAllExchanges,
     autoRestartOnUnbalanced,
-    soundEnabled,
+    handleTrades,
   ])
 
-  const isAnyMonitoring = monitor2to1.isMonitoring || monitor1to2.isMonitoring
-
+  // ========== UI helpers ==========
   const getMonitoringSummary = () => {
     if (!isAnyMonitoring || !priceDiff) return null
     const parts: string[] = []
@@ -461,14 +471,14 @@ export function PositionGroup({
     return parts.join(' | ')
   }
 
+  // ========== Render ==========
   return (
     <div
-      className={`rounded-md border p-3 border-dashed  ${hasPositions ? 'border-muted-foreground/70' : 'border-muted-foreground/30'}`}
+      className={`rounded-md border p-3 border-dashed ${hasPositions ? 'border-muted-foreground/70' : 'border-muted-foreground/30'}`}
     >
+      {/* Header */}
       <div
-        onClick={() => {
-          setIsCollapsed(!isCollapsed)
-        }}
+        onClick={() => setIsCollapsed(!isCollapsed)}
         className="flex items-center justify-between cursor-pointer"
       >
         <div className="flex items-center gap-2">
@@ -489,7 +499,7 @@ export function PositionGroup({
         </div>
         <div className="flex items-center gap-2">
           {hasPositions ? (
-            <span className={totalPnl >= 0 ? '' : ''}>
+            <span>
               {totalPnl >= 0 ? '+' : '-'}
               {Math.abs(totalPnl).toFixed(2)}u
             </span>
@@ -505,6 +515,7 @@ export function PositionGroup({
         </div>
       </div>
 
+      {/* Expanded content */}
       {!isCollapsed && (
         <>
           {hasPositions && (

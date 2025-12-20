@@ -218,83 +218,57 @@ export function useTrade({
     [prepareTradeSteps, executeTradeStep]
   )
 
-  const executeArbitrage = useCallback(
-    async (symbol: string, direction: '1to2' | '2to1', size: number): Promise<void> => {
-      const symbolData = symbolStates.find((s) => s.symbol === symbol)
-      const stats = symbolData?.exchangeMarketStats || []
-      if (stats.length < 2) {
-        throw new Error('Need data from two exchanges')
-      }
+  const doTrades = useCallback(
+    async (
+      trades: { symbol: string; direction: 'long' | 'short'; size: number; platform: string }[]
+    ): Promise<void> => {
+      if (trades.length === 0) return
 
-      const sortedStats = [...stats].sort((a, b) => a.exchangeId.localeCompare(b.exchangeId))
-      const platform1Id = sortedStats[0].exchangeId
-      const platform2Id = sortedStats[1].exchangeId
+      console.log('[Arbflow] Executing trades:', trades)
 
-      let platform1Direction: 'long' | 'short'
-      let platform2Direction: 'long' | 'short'
+      const simulateTrade = trades.find((t) => {
+        const config = EXCHANGES.find((e) => e.abbreviation === t.platform)
+        return config?.tradeExecutor !== 'api'
+      })
 
-      if (direction === '2to1') {
-        platform1Direction = 'short'
-        platform2Direction = 'long'
-      } else {
-        platform1Direction = 'long'
-        platform2Direction = 'short'
-      }
-
-      const platform1Config = EXCHANGES.find((e) => e.abbreviation === platform1Id)
-      const platform2Config = EXCHANGES.find((e) => e.abbreviation === platform2Id)
-
-      const platform1Executor = platform1Config?.tradeExecutor || 'simulate'
-      const platform2Executor = platform2Config?.tradeExecutor || 'simulate'
-
-      console.log(
-        `[Arbflow] Executing arbitrage: ${symbol} ${size}`,
-        `${platform1Id}(${platform1Executor})=${platform1Direction}`,
-        `${platform2Id}(${platform2Executor})=${platform2Direction}`
-      )
-
-      const simulatePlatformId =
-        platform1Executor === 'simulate'
-          ? platform1Id
-          : platform2Executor === 'simulate'
-            ? platform2Id
-            : null
-
-      if (simulatePlatformId) {
-        const simulateExchange = getExchangeById(simulatePlatformId)
+      if (simulateTrade) {
+        const simulateExchange = getExchangeById(simulateTrade.platform)
         if (simulateExchange?.tabId) {
           await chrome.tabs.update(simulateExchange.tabId, { active: true })
           await new Promise((r) => setTimeout(r, 200))
         }
       }
 
-      const executeOne = async (platformId: string, platformDirection: 'long' | 'short', executor: string) => {
+      const executeOne = async (trade: {
+        symbol: string
+        direction: 'long' | 'short'
+        size: number
+        platform: string
+      }) => {
+        const config = EXCHANGES.find((e) => e.abbreviation === trade.platform)
+        const executor = config?.tradeExecutor || 'simulate'
+
         try {
           if (executor === 'api') {
-            return await executeTradeByAPI(platformId, symbol, platformDirection, size)
+            return await executeTradeByAPI(trade.platform, trade.symbol, trade.direction, trade.size)
           } else {
-            return await executeTradeByUI(platformId, symbol, platformDirection, size)
+            return await executeTradeByUI(trade.platform, trade.symbol, trade.direction, trade.size)
           }
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e)
-          throw new Error(`[${platformId}] ${msg}`)
+          throw new Error(`[${trade.platform}] ${msg}`)
         }
       }
 
-      await Promise.all([
-        executeOne(platform1Id, platform1Direction, platform1Executor),
-        executeOne(platform2Id, platform2Direction, platform2Executor),
-      ])
+      await Promise.all(trades.map(executeOne))
 
-      console.log('[Arbflow] Arbitrage completed')
+      console.log('[Arbflow] Trades completed')
     },
-    [symbolStates, getExchangeById, executeTradeByAPI, executeTradeByUI]
+    [getExchangeById, executeTradeByAPI, executeTradeByUI]
   )
 
   return {
-    executeApiTrade: executeTradeByAPI,
-    executeSimulateTrade: executeTradeByUI,
-    executeArbitrage,
+    doTrades,
     initializeLighterApi,
     fetchLighterAccountIndex,
   }

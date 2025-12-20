@@ -70,34 +70,37 @@ export function ActionPanel({
   const netPosition = platform1Pos + platform2Pos
   const isUnbalanced = Math.abs(netPosition) > 0.0001
 
+  const minPos = parseFloat(positionMin) || 0
+  const maxPos = parseFloat(positionMax) || 0
+
   const roundSize = (size: number) => Math.round(size * 10000) / 10000
 
-  const getRebalanceInfo2to1 = () => {
+  /**
+   * Check if rebalance on target platform would keep platform1 within position limits.
+   * - If target is platform1: check if new position would be within [minPos, maxPos]
+   * - If target is platform2: platform1 position doesn't change, always allowed
+   */
+  const getRebalanceInfo = (targetPlatformId: string) => {
     if (!isUnbalanced) return undefined
-    if (netPosition < 0) {
-      const size = roundSize(Math.abs(netPosition))
-      return {
-        platformId: priceDiff.platform2Id,
-        size,
-        action: '+' as const,
-        onRebalance: () => onRebalance(priceDiff.platform2Id, size, 'long'),
-      }
-    }
-    return undefined
-  }
+    const size = roundSize(Math.abs(netPosition))
+    const action = netPosition < 0 ? ('+' as const) : ('-' as const)
+    const direction = netPosition < 0 ? 'long' : 'short'
 
-  const getRebalanceInfo1to2 = () => {
-    if (!isUnbalanced) return undefined
-    if (netPosition > 0) {
-      const size = roundSize(netPosition)
-      return {
-        platformId: priceDiff.platform2Id,
-        size,
-        action: '-' as const,
-        onRebalance: () => onRebalance(priceDiff.platform2Id, size, 'short'),
+    // Check if this rebalance would violate platform1 position limits
+    if (targetPlatformId === priceDiff.platform1Id) {
+      const positionDelta = direction === 'long' ? size : -size
+      const newPlatform1Pos = platform1Pos + positionDelta
+      if (newPlatform1Pos < minPos || newPlatform1Pos > maxPos) {
+        return undefined
       }
     }
-    return undefined
+
+    return {
+      platformId: targetPlatformId,
+      size,
+      action,
+      onRebalance: () => onRebalance(targetPlatformId, size, direction),
+    }
   }
 
   return (
@@ -202,7 +205,7 @@ export function ActionPanel({
         onMonitorToggle={() =>
           setMonitor2to1((prev) => ({ ...prev, isMonitoring: !prev.isMonitoring }))
         }
-        rebalanceInfo={getRebalanceInfo2to1()}
+        rebalanceInfo={getRebalanceInfo(priceDiff.platform2Id)}
       />
       <SpreadRow
         label={`-${priceDiff.platform2Id}+${priceDiff.platform1Id}`}
@@ -235,7 +238,7 @@ export function ActionPanel({
         onMonitorToggle={() =>
           setMonitor1to2((prev) => ({ ...prev, isMonitoring: !prev.isMonitoring }))
         }
-        rebalanceInfo={getRebalanceInfo1to2()}
+        rebalanceInfo={getRebalanceInfo(priceDiff.platform1Id)}
       />
 
       {tradeLogs.length > 0 && (

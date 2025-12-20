@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchLighterAccountIndex } from '../lib/lighter-api'
 import { SYMBOL_MARKET_ID_MAP } from '../lib/symbols'
-import { ExchangeCard, PositionGroup, SettingsDialog, StatusToast } from './components'
+import { ExchangeCard, SettingsDialog, StatusToast, SymbolCard } from './components'
 import { useExchanges, useSettings, useTrade } from './hooks'
 
 const MIN_WIDTH = 500
@@ -70,7 +70,7 @@ export function SidePanel() {
     disconnectLighterWs,
   } = useExchanges(watchedSymbols, lighterConfig)
 
-  const { executeArbitrage, executeApiTrade } = useTrade({
+  const { doTrades } = useTrade({
     exchanges,
     symbolStates,
     lighterConfig,
@@ -99,30 +99,16 @@ export function SidePanel() {
     }
   }
 
-  const handleExecuteArbitrage = async (
-    symbol: string,
-    direction: '1to2' | '2to1',
-    size: number,
+  const handleDoTrades = async (
+    trades: { symbol: string; direction: 'long' | 'short'; size: number; platform: string }[],
   ) => {
     try {
-      showStatus(`Executing arbitrage...`, true)
-      await executeArbitrage(symbol, direction, size)
-      showStatus(`✓ Arbitrage completed`, true)
-    } catch (e) {
-      showStatus(`Arbitrage failed: ${(e as Error).message}`, false)
-      throw e
-    }
-  }
-
-  const handleExecuteSingleTrade = async (
-    exchangeId: string,
-    symbol: string,
-    direction: 'long' | 'short',
-    size: number,
-  ) => {
-    try {
-      showStatus(`Executing single trade...`, true)
-      await executeApiTrade(exchangeId, symbol, direction, size)
+      const desc =
+        trades.length === 1
+          ? `${trades[0].platform} ${trades[0].direction}`
+          : trades.map((t) => `${t.direction === 'long' ? '+' : '-'}${t.platform}`).join('')
+      showStatus(`Executing ${desc}...`, true)
+      await doTrades(trades)
       showStatus(`✓ Trade completed`, true)
     } catch (e) {
       showStatus(`Trade failed: ${(e as Error).message}`, false)
@@ -242,13 +228,12 @@ export function SidePanel() {
           ) : (
             <div className="space-y-4">
               {sortedSymbols.map((symbol) => (
-                <PositionGroup
+                <SymbolCard
                   key={symbol}
                   symbol={symbol}
                   symbolState={symbolStates.find((s) => s.symbol === symbol)}
                   exchanges={exchanges}
-                  onExecuteArbitrage={handleExecuteArbitrage}
-                  onExecuteSingleTrade={handleExecuteSingleTrade}
+                  onDoTrades={handleDoTrades}
                   globalTradeInterval={globalTradeInterval}
                   globalLastTradeTimeRef={globalLastTradeTimeRef}
                   globalLastRefreshTimeRef={globalLastRefreshTimeRef}
