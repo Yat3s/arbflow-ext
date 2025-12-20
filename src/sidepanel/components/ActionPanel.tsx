@@ -1,5 +1,4 @@
 import type { PriceDiff } from '../../lib/types'
-import { roundSize } from '../../lib/utils'
 import { SpreadRow } from './SpreadRow'
 
 interface MonitorState {
@@ -70,6 +69,8 @@ export function ActionPanel({
   const platform2Pos = positionByExchange[priceDiff.platform2Id] || 0
   const netPosition = platform1Pos + platform2Pos
   const isUnbalanced = Math.abs(netPosition) > 0.0001
+
+  const roundSize = (size: number) => Math.round(size * 10000) / 10000
 
   const getRebalanceInfo2to1 = () => {
     if (!isUnbalanced) return undefined

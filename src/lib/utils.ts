@@ -25,7 +25,3 @@ export function formatPrice(price: number, referencePrice?: number): string {
     return price.toFixed(6)
 }
 
-export function roundSize(size: number): number {
-    return Math.round(size * 10000) / 10000
-}
-

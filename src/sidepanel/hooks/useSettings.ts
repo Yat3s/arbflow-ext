@@ -10,7 +10,6 @@ const STORAGE_KEYS = {
   CONSECUTIVE_TRIGGER_COUNT: 'arbflow_consecutive_trigger_count',
   AUTO_RESTART_ON_UNBALANCED: 'arbflow_auto_restart_on_unbalanced',
   SOUND_ENABLED: 'arbflow_sound_enabled',
-  AUTO_REBALANCE_SINGLE_SIZE: 'arbflow_auto_rebalance_single_size',
 }
 
 const DEFAULT_GLOBAL_TRADE_INTERVAL = 1000
@@ -24,7 +23,6 @@ export function useSettings() {
   const [consecutiveTriggerCount, setConsecutiveTriggerCount] = useState<number>(DEFAULT_CONSECUTIVE_TRIGGER_COUNT)
   const [autoRestartOnUnbalanced, setAutoRestartOnUnbalanced] = useState<boolean>(false)
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true)
-  const [autoRebalanceSingleSize, setAutoRebalanceSingleSize] = useState<boolean>(false)
 
   useEffect(() => {
     const savedSymbols = localStorage.getItem(STORAGE_KEYS.WATCHED_SYMBOLS)
@@ -75,11 +73,6 @@ export function useSettings() {
     const savedSoundEnabled = localStorage.getItem(STORAGE_KEYS.SOUND_ENABLED)
     if (savedSoundEnabled) {
       setSoundEnabled(savedSoundEnabled === 'true')
-    }
-
-    const savedAutoRebalance = localStorage.getItem(STORAGE_KEYS.AUTO_REBALANCE_SINGLE_SIZE)
-    if (savedAutoRebalance) {
-      setAutoRebalanceSingleSize(savedAutoRebalance === 'true')
     }
   }, [])
 
@@ -132,11 +125,6 @@ export function useSettings() {
     localStorage.setItem(STORAGE_KEYS.SOUND_ENABLED, String(enabled))
   }, [])
 
-  const saveAutoRebalanceSingleSize = useCallback((enabled: boolean) => {
-    setAutoRebalanceSingleSize(enabled)
-    localStorage.setItem(STORAGE_KEYS.AUTO_REBALANCE_SINGLE_SIZE, String(enabled))
-  }, [])
-
   return {
     watchedSymbols,
     saveWatchedSymbols,
@@ -152,8 +140,6 @@ export function useSettings() {
     saveAutoRestartOnUnbalanced,
     soundEnabled,
     saveSoundEnabled,
-    autoRebalanceSingleSize,
-    saveAutoRebalanceSingleSize,
   }
 }
 

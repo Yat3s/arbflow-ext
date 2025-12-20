@@ -54,12 +54,9 @@ export function SidePanel() {
     saveAutoRestartOnUnbalanced,
     soundEnabled,
     saveSoundEnabled,
-    autoRebalanceSingleSize,
-    saveAutoRebalanceSingleSize,
   } = useSettings()
   const globalLastTradeTimeRef = useRef<number>(0)
   const globalLastRefreshTimeRef = useRef<number>(0)
-  const globalLastAutoRebalanceTimeRef = useRef<number>(0)
 
   const {
     exchanges,
@@ -233,21 +230,6 @@ export function SidePanel() {
               />
             </button>
           </label>
-          <label className="flex cursor-pointer items-center gap-2">
-            <span className="text-sm text-muted-foreground">仓位自补齐(单size)</span>
-            <button
-              onClick={() => saveAutoRebalanceSingleSize(!autoRebalanceSingleSize)}
-              className={`relative h-5 w-9 rounded-full transition-colors ${
-                autoRebalanceSingleSize ? 'bg-primary' : 'bg-muted-foreground/30'
-              }`}
-            >
-              <span
-                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                  autoRebalanceSingleSize ? 'translate-x-4' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </label>
         </div>
       </div>
 
@@ -274,8 +256,6 @@ export function SidePanel() {
                   onRefreshAllExchanges={refreshAllExchanges}
                   autoRestartOnUnbalanced={autoRestartOnUnbalanced}
                   soundEnabled={soundEnabled}
-                  autoRebalanceSingleSize={autoRebalanceSingleSize}
-                  globalLastAutoRebalanceTimeRef={globalLastAutoRebalanceTimeRef}
                 />
               ))}
             </div>
