@@ -86,13 +86,24 @@ export function ExchangeCard({
             </button>
           </div>
         )}
-        {exchange.accountInfo?.walletAddress && (
-          <div
-            className="truncate font-mono text-xs text-muted-foreground"
-            title={exchange.accountInfo.walletAddress}
-          >
-            {exchange.accountInfo.walletAddress.slice(0, 6)}...
-            {exchange.accountInfo.walletAddress.slice(-4)}
+        {exchange.accountInfo && (
+          <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+            {exchange.accountInfo.walletAddress && (
+              <span className="truncate" title={exchange.accountInfo.walletAddress}>
+                {exchange.accountInfo.walletAddress.slice(0, 6)}...
+                {exchange.accountInfo.walletAddress.slice(-4)}
+              </span>
+            )}
+            {exchange.accountInfo.portfolioValue != null && (
+              <span className="text-green-500">
+                ${exchange.accountInfo.portfolioValue.toFixed(2)}
+                {exchange.accountInfo.leverage != null && (
+                  <span className="text-xs text-muted-foreground">
+                    ({exchange.accountInfo.leverage.toFixed(2)}x)
+                  </span>
+                )}
+              </span>
+            )}
           </div>
         )}
       </div>

@@ -110,7 +110,7 @@ export function ActionPanel({
         <span className="flex-1 h-px bg-muted-foreground/40"></span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-muted-foreground">每次执行数量:</label>
+        <label className="text-xs text-muted-foreground">Step size:</label>
         <div className="relative">
           <input
             type="number"
@@ -127,7 +127,7 @@ export function ActionPanel({
             </span>
           )}
         </div>
-        <span className="text-xs text-muted-foreground">{priceDiff.platform1Id} 最大持仓</span>
+        <span className="text-xs text-muted-foreground">{priceDiff.platform1Id} Max</span>
         <div className="relative">
           <input
             type="number"
@@ -161,7 +161,7 @@ export function ActionPanel({
             </span>
           )}
         </div>
-        <span className="text-xs text-muted-foreground">交易间隔</span>
+        <span className="text-xs text-muted-foreground">间隔</span>
         <input
           type="number"
           value={tradeInterval}

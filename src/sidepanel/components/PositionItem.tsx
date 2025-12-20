@@ -15,7 +15,7 @@ export function PositionItem({ pos, exchange }: PositionItemProps) {
   const isStale = pos.lastUpdated && Date.now() - pos.lastUpdated > 60000
 
   return (
-    <div className="grid grid-cols-[auto_40px_120px_1fr_60px] items-center gap-2 text-[10px]">
+    <div className="grid grid-cols-[auto_40px_150px_1fr_60px] items-center gap-2 text-[10px]">
       <span
         className="w-10 text-center px-1.5 py-0.5 text-black font-bold"
         style={{ backgroundColor: color }}
@@ -36,10 +36,10 @@ export function PositionItem({ pos, exchange }: PositionItemProps) {
         入 {formatPrice(pos.avgEntryPrice)} / fnd {fundingSign}
         {Math.abs(funding).toFixed(2)}
       </span>
-      <span className={`text-right ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+      {/* <span className={`text-right ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
         {pnlSign}
         {Math.abs(totalPnl).toFixed(2)}u
-      </span>
+      </span> */}
     </div>
   )
 }

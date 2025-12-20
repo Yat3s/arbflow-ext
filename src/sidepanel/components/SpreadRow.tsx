@@ -52,20 +52,34 @@ export function SpreadRow({
 
   return (
     <div className={`flex flex-col gap-2 rounded px-3 py-2 bg-muted-foreground/10 text-xs `}>
-      <div className="flex items-center gap-2">
-        <span className="font-bold shrink-0 font-mono text-muted-foreground">{label}</span>
-        <span className={`w-40 font-bold shrink-0 ${isPositive ? 'text-white' : 'text-white'}`}>
-          {sign}
-          {formatPrice(spread, refPrice)}U({sign}
-          {percentage.toFixed(3)}%)
-        </span>
-        <span className="shrink-0 text-muted-foreground text-xs">
-          {(() => {
-            const t1 = formatTime(platform1LastUpdated)
-            const t2 = formatTime(platform2LastUpdated)
-            return `${t1.skew ? '⚠️' : ''}${t1.timeStr}/${t2.skew ? '⚠️' : ''}${t2.timeStr}`
-          })()}
-        </span>
+      <div className="flex items-center gap-2 justify-between">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold shrink-0 font-mono text-muted-foreground text-lg">
+            {label}
+          </span>
+          <span
+            className={`text-2xl w-40 font-semibold shrink-0 ${isPositive ? 'text-white' : 'text-white'}`}
+          >
+            {sign}
+            {formatPrice(spread, refPrice)}
+            <span className="text-xs font-mono font-normal">
+              ({sign}
+              {percentage.toFixed(3)}%)
+            </span>
+          </span>
+        </div>
+        {(() => {
+          const t1 = formatTime(platform1LastUpdated)
+          const t2 = formatTime(platform2LastUpdated)
+          if (!t1.skew && !t2.skew) return null
+          return (
+            <span className="shrink-0 text-muted-foreground text-xs">
+              {t1.skew ? `⚠️${t1.timeStr}` : ''}
+              {t1.skew && t2.skew ? '/' : ''}
+              {t2.skew ? `⚠️${t2.timeStr}` : ''}
+            </span>
+          )
+        })()}
       </div>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">

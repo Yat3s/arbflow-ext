@@ -44,7 +44,7 @@ interface SymbolCardProps {
 
 const DEFAULT_TRADE_INTERVAL = '1000'
 const REFRESH_INTERVAL = 5 * 60 * 1000
-const STOP_MONITOR_IF_UNBALANCED_TIME = 10000
+const STOP_MONITOR_IF_UNBALANCED_TIME = 20000
 
 const AUTO_REBALANCE_DELAY = 3000
 const AUTO_REBALANCE_COOLDOWN = 5 * 60 * 1000
@@ -603,14 +603,14 @@ export function SymbolCard({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {hasPositions ? (
+          {/* {hasPositions ? (
             <span>
               {totalPnl >= 0 ? '+' : '-'}
               {Math.abs(totalPnl).toFixed(2)}u
             </span>
           ) : (
             <span className="text-xs text-muted-foreground">无仓位</span>
-          )}
+          )} */}
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="text-muted-foreground hover:text-foreground transition-colors"

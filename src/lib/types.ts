@@ -67,6 +67,8 @@ export interface ExchangeState {
 
 export interface AccountInfo {
   walletAddress: string
+  portfolioValue?: number
+  leverage?: number
 }
 
 export interface SymbolState {

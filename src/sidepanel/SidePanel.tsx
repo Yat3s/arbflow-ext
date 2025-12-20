@@ -141,20 +141,49 @@ export function SidePanel() {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="flex items-center justify-between px-4 py-3">
-        <h1 className="text-lg font-semibold">Arbflow</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold">Arbflow</h1>
+          <span className="text-xs text-muted-foreground">
+            {(() => {
+              const lg = exchanges.find((e) => e.id === 'LG')?.accountInfo
+              const om = exchanges.find((e) => e.id === 'OM')?.accountInfo
+              const lgVal = lg?.portfolioValue
+              const omVal = om?.portfolioValue
+              const lgLev = lg?.leverage
+              const omLev = om?.leverage
+
+              if (lgVal == null && omVal == null) return null
+
+              const parts: string[] = []
+              if (lgVal != null) {
+                parts.push(`LG(${lgVal.toFixed(1)})`)
+              }
+              if (omVal != null) {
+                parts.push(`OM(${omVal.toFixed(1)})`)
+              }
+
+              const total = (lgVal ?? 0) + (omVal ?? 0)
+              return (
+                <>
+                  {parts.join(' + ')} = <span className="font-semibold">{total.toFixed(1)}</span>
+                </>
+              )
+            })()}
+          </span>
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={handleRefreshAll}
             disabled={isRefreshing}
             className="cursor-pointer rounded  px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
           >
-            {isRefreshing ? '↻...' : '↻ Refresh All'}
+            {isRefreshing ? '↻...' : '↻'}
           </button>
           <button
             onClick={() => setSettingsOpen(true)}
             className="cursor-pointer rounded  px-3 py-1.5 text-sm hover:bg-muted"
           >
-            ⚙ Settings
+            ⚙
           </button>
         </div>
       </header>
@@ -162,7 +191,7 @@ export function SidePanel() {
       {/* Global settings */}
       <div className="flex flex-col gap-2 px-4 pb-2">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">全局交易间隔:</span>
+          <span className="text-xs text-muted-foreground">全局交易间隔:</span>
           <input
             type="number"
             value={globalTradeInterval}
@@ -173,8 +202,8 @@ export function SidePanel() {
             min={100}
             step={100}
           />
-          <span className="text-sm text-muted-foreground">ms</span>
-          <span className="ml-4 text-sm text-muted-foreground">连续触发次数阈值:</span>
+          <span className="text-xs text-muted-foreground">ms</span>
+          <span className="ml-4 text-xs text-muted-foreground">连续触发次数阈值:</span>
           <input
             type="number"
             value={consecutiveTriggerCount}
@@ -189,7 +218,7 @@ export function SidePanel() {
         </div>
         <div className="flex items-center gap-4">
           <label className="flex cursor-pointer items-center gap-2">
-            <span className="text-sm text-muted-foreground">提示音</span>
+            <span className="text-xs text-muted-foreground">提示音</span>
             <button
               onClick={() => saveSoundEnabled(!soundEnabled)}
               className={`relative h-5 w-9 rounded-full transition-colors ${
@@ -204,7 +233,7 @@ export function SidePanel() {
             </button>
           </label>
           <label className="flex cursor-pointer items-center gap-2">
-            <span className="text-sm text-muted-foreground">仓位异常自重启</span>
+            <span className="text-xs text-muted-foreground">仓位异常自重启</span>
             <button
               onClick={() => saveAutoRestartOnUnbalanced(!autoRestartOnUnbalanced)}
               className={`relative h-5 w-9 rounded-full transition-colors ${
@@ -219,7 +248,7 @@ export function SidePanel() {
             </button>
           </label>
           <label className="flex cursor-pointer items-center gap-2">
-            <span className="text-sm text-muted-foreground">交易失败自补齐</span>
+            <span className="text-xs text-muted-foreground">交易失败自补齐</span>
             <button
               onClick={() => saveAutoRebalanceOnError(!autoRebalanceOnError)}
               className={`relative h-5 w-9 rounded-full transition-colors ${
@@ -281,7 +310,7 @@ export function SidePanel() {
           </div>
         </section>
 
-        <section className="mt-6">
+        {/* <section className="mt-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-medium text-muted-foreground">Lighter WS Debug</h2>
             <div className="flex items-center gap-2">
@@ -323,7 +352,7 @@ export function SidePanel() {
               )}
             </div>
           )}
-        </section>
+        </section> */}
       </main>
 
       <SettingsDialog

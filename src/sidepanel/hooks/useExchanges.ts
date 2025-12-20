@@ -327,7 +327,9 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
             return p
           }
           return p.map((ex) =>
-            ex.id === 'OM' ? { ...ex, accountInfo: { walletAddress } } : ex
+            ex.id === 'OM'
+              ? { ...ex, accountInfo: { ...ex.accountInfo, walletAddress } }
+              : ex
           )
         })
       }
@@ -564,9 +566,9 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
         console.log('[Arbflow] Lighter WebSocket connected')
         const subscribeMsgs = [
           { type: 'subscribe', channel: `account_all_positions/${accountId}` },
-          { type: 'subscribe', channel: `account_all_orders/${accountId}`, auth: authToken },
-          { type: 'subscribe', channel: `account_all_trades/${accountId}`, auth: authToken },
-          { type: 'subscribe', channel: `account_tx/${accountId}`, auth: authToken },
+          { type: 'subscribe', channel: `user_stats/${accountId}`, auth: authToken },
+          // { type: 'subscribe', channel: `account_all_assets/${accountId}`, auth: authToken },
+          // { type: 'subscribe', channel: `account_tx/${accountId}`, auth: authToken },
         ]
         for (const msg of subscribeMsgs) {
           ws.send(JSON.stringify(msg))
@@ -605,6 +607,27 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
               deltaPositions.push(pos as LighterWsPosition)
             }
             handleLighterWsPositions(deltaPositions, false)
+          } else if (
+            (data.type === 'subscribed/user_stats' || data.type === 'update/user_stats') &&
+            data.stats
+          ) {
+            const portfolioValue = parseFloat(data.stats.portfolio_value)
+            const leverage = parseFloat(data.stats.leverage)
+            setExchanges((prev) =>
+              prev.map((ex) =>
+                ex.id === 'LG'
+                  ? {
+                    ...ex,
+                    accountInfo: {
+                      ...ex.accountInfo,
+                      walletAddress: ex.accountInfo?.walletAddress || '',
+                      portfolioValue: !isNaN(portfolioValue) ? portfolioValue : ex.accountInfo?.portfolioValue,
+                      leverage: !isNaN(leverage) ? leverage : ex.accountInfo?.leverage,
+                    },
+                  }
+                  : ex
+              )
+            )
           }
         } catch (e) {
           console.error('[Arbflow] Failed to parse Lighter ws message:', e)
@@ -663,6 +686,24 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
             message.positions as Position[],
             message.isFullUpdate as boolean,
             'ui'
+          )
+          break
+
+        case 'ACCOUNT_INFO':
+          setExchanges((prev) =>
+            prev.map((ex) =>
+              ex.id === message.exchange
+                ? {
+                  ...ex,
+                  accountInfo: {
+                    ...ex.accountInfo,
+                    walletAddress: ex.accountInfo?.walletAddress || '',
+                    portfolioValue: message.portfolioValue as number | undefined,
+                    leverage: message.leverage as number | undefined,
+                  },
+                }
+                : ex
+            )
           )
           break
       }
@@ -732,19 +773,25 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
   }, [])
 
   const refreshAllExchanges = useCallback(async () => {
+    // Reload tabs for exchanges that require open tabs
     for (const exchange of exchanges) {
       if (!exchange.enforceOpenTab) continue
 
-      if (exchange.tabId) {
-        await chrome.tabs.reload(exchange.tabId)
-      } else {
-        await chrome.tabs.create({ url: exchange.baseUrl, active: false })
+      try {
+        if (exchange.tabId) {
+          await chrome.tabs.reload(exchange.tabId)
+        } else {
+          await chrome.tabs.create({ url: exchange.baseUrl, active: false })
+        }
+      } catch (e) {
+        console.error(`[Arbflow] Failed to reload ${exchange.name}:`, e)
       }
     }
 
     await new Promise((r) => setTimeout(r, 2000))
     await scanOpenExchanges()
 
+    // Reconnect WebSockets
     disconnectAllWs()
     disconnectLighterWs()
 
