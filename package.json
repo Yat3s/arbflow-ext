@@ -1,7 +1,7 @@
 {
   "name": "arbflow-ext-react",
   "displayName": "Arbflow Extension",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "author": "arbflow",
   "description": "",
   "type": "module",

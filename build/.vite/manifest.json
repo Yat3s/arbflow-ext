@@ -1,0 +1,73 @@
+{
+  "../../../../@crx/manifest": {
+    "file": "assets/chunk-BtJI1OHj.js",
+    "name": "crx-manifest.js",
+    "src": "../../../../@crx/manifest",
+    "isEntry": true
+  },
+  "_chunk-!~{007}~.js": {
+    "file": "assets/index-CGDxZ063.css",
+    "src": "_chunk-!~{007}~.js"
+  },
+  "_chunk-CYil5rA3.js": {
+    "file": "assets/chunk-CYil5rA3.js",
+    "name": "index",
+    "css": [
+      "assets/index-CGDxZ063.css"
+    ]
+  },
+  "_chunk-CgcjkoXT.js": {
+    "file": "assets/chunk-CgcjkoXT.js",
+    "name": "config"
+  },
+  "index.ts-loader.js": {
+    "file": "assets/index.ts-loader-BTxte-RF.js",
+    "src": "index.ts-loader.js"
+  },
+  "options.html": {
+    "file": "assets/chunk-BpIad2v8.js",
+    "name": "options.html",
+    "src": "options.html",
+    "isEntry": true,
+    "imports": [
+      "_chunk-CYil5rA3.js"
+    ]
+  },
+  "sidepanel.html": {
+    "file": "assets/chunk-DLPBjHt9.js",
+    "name": "sidepanel.html",
+    "src": "sidepanel.html",
+    "isEntry": true,
+    "imports": [
+      "_chunk-CYil5rA3.js",
+      "_chunk-CgcjkoXT.js"
+    ],
+    "assets": [
+      "assets/ding-C-5Q8E1-.mp3",
+      "assets/warn-NHXt42wg.wav"
+    ]
+  },
+  "src/assets/ding.mp3": {
+    "file": "assets/ding-C-5Q8E1-.mp3",
+    "src": "src/assets/ding.mp3"
+  },
+  "src/assets/warn.wav": {
+    "file": "assets/warn-NHXt42wg.wav",
+    "src": "src/assets/warn.wav"
+  },
+  "src/background/index.ts": {
+    "file": "assets/chunk-Ou9kAMkC.js",
+    "name": "index.ts",
+    "src": "src/background/index.ts",
+    "isEntry": true
+  },
+  "src/contentScript/index.ts": {
+    "file": "assets/chunk-DOtqjKp5.js",
+    "name": "index.ts",
+    "src": "src/contentScript/index.ts",
+    "isEntry": true,
+    "imports": [
+      "_chunk-CgcjkoXT.js"
+    ]
+  }
+}
