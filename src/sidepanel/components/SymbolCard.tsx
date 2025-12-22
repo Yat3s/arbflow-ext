@@ -5,7 +5,7 @@ import { calculatePriceDiff } from '../../lib/price'
 import { loadSymbolSettings, saveSymbolSettings, type SymbolSettings } from '../../lib/storage'
 import { SYMBOL_ICON_MAP } from '../../lib/symbols'
 import type { SymbolState } from '../../lib/types'
-import { formatTime } from '../../lib/utils'
+import { formatBps, formatTime } from '../../lib/utils'
 import { ActionPanel } from './ActionPanel'
 import { PositionItem } from './PositionItem'
 
@@ -13,8 +13,7 @@ const playDing = () => new Audio(dingSound).play().catch(() => {})
 const playWarn = () => new Audio(warnSound).play().catch(() => {})
 
 interface MonitorState {
-  condition: '>' | '<'
-  unit: 'percent' | 'usdt'
+  unit: 'bps' | 'usdt'
   threshold: string
   isMonitoring: boolean
 }
@@ -69,14 +68,12 @@ export function SymbolCard({
     savedSettings?.tradeInterval ?? DEFAULT_TRADE_INTERVAL,
   )
   const [monitor2to1, setMonitor2to1] = useState<MonitorState>({
-    condition: savedSettings?.monitor2to1?.condition ?? '>',
-    unit: savedSettings?.monitor2to1?.unit ?? 'percent',
+    unit: savedSettings?.monitor2to1?.unit ?? 'usdt',
     threshold: savedSettings?.monitor2to1?.threshold ?? '',
     isMonitoring: false,
   })
   const [monitor1to2, setMonitor1to2] = useState<MonitorState>({
-    condition: savedSettings?.monitor1to2?.condition ?? '>',
-    unit: savedSettings?.monitor1to2?.unit ?? 'percent',
+    unit: savedSettings?.monitor1to2?.unit ?? 'usdt',
     threshold: savedSettings?.monitor1to2?.threshold ?? '',
     isMonitoring: false,
   })
@@ -384,12 +381,10 @@ export function SymbolCard({
       positionMax,
       tradeInterval,
       monitor2to1: {
-        condition: monitor2to1.condition,
         unit: monitor2to1.unit,
         threshold: monitor2to1.threshold,
       },
       monitor1to2: {
-        condition: monitor1to2.condition,
         unit: monitor1to2.unit,
         threshold: monitor1to2.threshold,
       },
@@ -468,11 +463,10 @@ export function SymbolCard({
         return
       }
 
-      // Check spread threshold condition
+      // Check spread threshold condition (always use >)
       const threshold = parseFloat(monitor.threshold) || 0
-      const compareValue = monitor.unit === 'percent' ? (spread / refPrice) * 100 : spread
-      const conditionMet =
-        monitor.condition === '>' ? compareValue > threshold : compareValue < threshold
+      const compareValue = monitor.unit === 'bps' ? (spread / refPrice) * 10000 : spread
+      const conditionMet = compareValue > threshold
 
       // Track consecutive triggers to filter out noise
       if (conditionMet) {
@@ -535,12 +529,12 @@ export function SymbolCard({
     const parts: string[] = []
     if (monitor2to1.isMonitoring) {
       parts.push(
-        `-${priceDiff.platform1Id}+${priceDiff.platform2Id} ${monitor2to1.condition} ${monitor2to1.threshold}${monitor2to1.unit === 'percent' ? '%' : 'u'}`,
+        `-${priceDiff.platform1Id}+${priceDiff.platform2Id} > ${monitor2to1.threshold}${monitor2to1.unit === 'bps' ? 'bp' : 'u'}`,
       )
     }
     if (monitor1to2.isMonitoring) {
       parts.push(
-        `-${priceDiff.platform2Id}+${priceDiff.platform1Id} ${monitor1to2.condition} ${monitor1to2.threshold}${monitor1to2.unit === 'percent' ? '%' : 'u'}`,
+        `-${priceDiff.platform2Id}+${priceDiff.platform1Id} > ${monitor1to2.threshold}${monitor1to2.unit === 'bps' ? 'bp' : 'u'}`,
       )
     }
     return parts.join(' | ')
@@ -578,8 +572,8 @@ export function SymbolCard({
               入场价差{' '}
               <span className={entrySpread.value >= 0 ? 'text-green-500' : 'text-red-400'}>
                 {entrySpread.value >= 0 ? '+' : ''}
-                {entrySpread.value.toFixed(3)}u({entrySpread.percent >= 0 ? '+' : ''}
-                {entrySpread.percent.toFixed(3)}%)
+                {entrySpread.value.toFixed(3)}u({formatBps(entrySpread.percent, { showSign: true })}
+                )
               </span>
             </span>
           )}

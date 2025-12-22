@@ -2,8 +2,7 @@ import type { PriceDiff } from '../../lib/types'
 import { SpreadRow } from './SpreadRow'
 
 interface MonitorState {
-  condition: '>' | '<'
-  unit: 'percent' | 'usdt'
+  unit: 'bps' | 'usdt'
   threshold: string
   isMonitoring: boolean
 }
@@ -185,22 +184,15 @@ export function ActionPanel({
         platform1LastUpdated={priceDiff.platform1LastUpdated}
         platform2LastUpdated={priceDiff.platform2LastUpdated}
         onExecute={() => onExecute('2to1')}
-        monitorCondition={monitor2to1.condition}
         monitorUnit={monitor2to1.unit}
         monitorThreshold={monitor2to1.threshold}
         isMonitoring={monitor2to1.isMonitoring}
         isAnyMonitoring={isMonitoring}
         canStartMonitor={canStartMonitor2to1}
-        onMonitorConditionToggle={() =>
-          setMonitor2to1((prev) => ({
-            ...prev,
-            condition: prev.condition === '>' ? '<' : '>',
-          }))
-        }
         onMonitorUnitToggle={() =>
           setMonitor2to1((prev) => ({
             ...prev,
-            unit: prev.unit === 'percent' ? 'usdt' : 'percent',
+            unit: prev.unit === 'bps' ? 'usdt' : 'bps',
           }))
         }
         onMonitorThresholdChange={(value) =>
@@ -219,22 +211,15 @@ export function ActionPanel({
         platform1LastUpdated={priceDiff.platform1LastUpdated}
         platform2LastUpdated={priceDiff.platform2LastUpdated}
         onExecute={() => onExecute('1to2')}
-        monitorCondition={monitor1to2.condition}
         monitorUnit={monitor1to2.unit}
         monitorThreshold={monitor1to2.threshold}
         isMonitoring={monitor1to2.isMonitoring}
         isAnyMonitoring={isMonitoring}
         canStartMonitor={canStartMonitor1to2}
-        onMonitorConditionToggle={() =>
-          setMonitor1to2((prev) => ({
-            ...prev,
-            condition: prev.condition === '>' ? '<' : '>',
-          }))
-        }
         onMonitorUnitToggle={() =>
           setMonitor1to2((prev) => ({
             ...prev,
-            unit: prev.unit === 'percent' ? 'usdt' : 'percent',
+            unit: prev.unit === 'bps' ? 'usdt' : 'bps',
           }))
         }
         onMonitorThresholdChange={(value) =>

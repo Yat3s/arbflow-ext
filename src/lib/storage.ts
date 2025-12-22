@@ -3,8 +3,8 @@ export interface SymbolSettings {
   positionMin: string
   positionMax: string
   tradeInterval: string
-  monitor2to1: { condition: '>' | '<'; unit: 'percent' | 'usdt'; threshold: string }
-  monitor1to2: { condition: '>' | '<'; unit: 'percent' | 'usdt'; threshold: string }
+  monitor2to1: { unit: 'bps' | 'usdt'; threshold: string }
+  monitor1to2: { unit: 'bps' | 'usdt'; threshold: string }
 }
 
 const SYMBOL_SETTINGS_PREFIX = 'arbflow_symbol_'

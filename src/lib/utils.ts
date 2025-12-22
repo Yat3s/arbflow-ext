@@ -25,3 +25,9 @@ export function formatPrice(price: number, referencePrice?: number): string {
     return price.toFixed(6)
 }
 
+export function formatBps(percentage: number, options?: { showSign?: boolean }): string {
+    const bps = percentage * 100
+    const sign = options?.showSign && bps >= 0 ? '+' : ''
+    return `${sign}${bps.toFixed(1)}bp`
+}
+

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { formatPrice, formatTime } from '../../lib/utils'
+import { formatBps, formatPrice, formatTime } from '../../lib/utils'
 
 interface SpreadRowProps {
   label: string
@@ -8,13 +8,11 @@ interface SpreadRowProps {
   platform1LastUpdated?: number
   platform2LastUpdated?: number
   onExecute: () => void
-  monitorCondition: '>' | '<'
-  monitorUnit: 'percent' | 'usdt'
+  monitorUnit: 'bps' | 'usdt'
   monitorThreshold: string
   isMonitoring: boolean
   isAnyMonitoring: boolean
   canStartMonitor: boolean
-  onMonitorConditionToggle: () => void
   onMonitorUnitToggle: () => void
   onMonitorThresholdChange: (value: string) => void
   onMonitorToggle: () => void
@@ -34,13 +32,11 @@ export function SpreadRow({
   platform1LastUpdated,
   platform2LastUpdated,
   onExecute,
-  monitorCondition,
   monitorUnit,
   monitorThreshold,
   isMonitoring,
   isAnyMonitoring,
   canStartMonitor,
-  onMonitorConditionToggle,
   onMonitorUnitToggle,
   onMonitorThresholdChange,
   onMonitorToggle,
@@ -65,8 +61,7 @@ export function SpreadRow({
             {sign}
             {formatPrice(spread, refPrice)}
             <span className="text-xs font-mono font-normal">
-              ({sign}
-              {percentage.toFixed(3)}%
+              ({formatBps(percentage, { showSign: true })}
               {entrySpread != null &&
                 (() => {
                   const closeProfit = entrySpread + spread
@@ -103,22 +98,16 @@ export function SpreadRow({
             disabled={isMonitoring}
             className={`rounded bg-muted px-1.5 py-0.5 font-mono ${isMonitoring ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted/80'}`}
           >
-            {monitorUnit === 'percent' ? '%' : 'U'}
+            {monitorUnit === 'bps' ? 'bp' : 'U'}
           </button>
-          <button
-            onClick={onMonitorConditionToggle}
-            disabled={isMonitoring}
-            className={`rounded bg-muted px-1.5 py-0.5 font-mono ${isMonitoring ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted/80'}`}
-          >
-            {monitorCondition}
-          </button>
+          <span className="font-mono">&gt;</span>
           <input
             type="text"
             value={monitorThreshold}
             onChange={(e) => onMonitorThresholdChange(e.target.value)}
             disabled={isMonitoring}
             className={`w-12 rounded border border-border bg-background px-1 py-0.5 text-center ${isMonitoring ? 'cursor-not-allowed opacity-50' : ''}`}
-            placeholder={monitorUnit === 'percent' ? '%' : 'U'}
+            placeholder={monitorUnit === 'bps' ? 'bp' : 'U'}
           />
           <button
             onClick={onMonitorToggle}
