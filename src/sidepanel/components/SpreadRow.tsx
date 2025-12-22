@@ -24,6 +24,7 @@ interface SpreadRowProps {
     action: '+' | '-'
     onRebalance: () => void
   }
+  entrySpread?: number
 }
 
 export function SpreadRow({
@@ -44,6 +45,7 @@ export function SpreadRow({
   onMonitorThresholdChange,
   onMonitorToggle,
   rebalanceInfo,
+  entrySpread,
 }: SpreadRowProps) {
   const [confirmingRebalance, setConfirmingRebalance] = useState(false)
   const percentage = (spread / refPrice) * 100
@@ -58,13 +60,25 @@ export function SpreadRow({
             {label}
           </span>
           <span
-            className={`text-2xl w-40 font-semibold shrink-0 ${isPositive ? 'text-white' : 'text-white'}`}
+            className={`text-2xl font-semibold shrink-0 whitespace-nowrap ${isPositive ? 'text-white' : 'text-white'}`}
           >
             {sign}
             {formatPrice(spread, refPrice)}
             <span className="text-xs font-mono font-normal">
               ({sign}
-              {percentage.toFixed(3)}%)
+              {percentage.toFixed(3)}%
+              {entrySpread != null &&
+                (() => {
+                  const closeProfit = entrySpread + spread
+                  const closeProfitSign = closeProfit >= 0 ? '+' : ''
+                  return (
+                    <span className={closeProfit >= 0 ? '' : ''}>
+                      , 执行{closeProfitSign}
+                      {closeProfit.toFixed(3)}u
+                    </span>
+                  )
+                })()}
+              )
             </span>
           </span>
         </div>

@@ -33,6 +33,8 @@ interface ActionPanelProps {
   onExecute: (direction: '1to2' | '2to1') => void
   positionByExchange: { [exchangeId: string]: number }
   onRebalance: (platformId: string, size: number, direction: 'long' | 'short') => void
+  entrySpread?: number
+  shortExchangeId?: string
 }
 
 export function ActionPanel({
@@ -54,6 +56,8 @@ export function ActionPanel({
   onExecute,
   positionByExchange,
   onRebalance,
+  entrySpread,
+  shortExchangeId,
 }: ActionPanelProps) {
   const isValidNumber = (value: string) => value.trim() !== '' && !isNaN(Number(value))
 
@@ -206,6 +210,7 @@ export function ActionPanel({
           setMonitor2to1((prev) => ({ ...prev, isMonitoring: !prev.isMonitoring }))
         }
         rebalanceInfo={getRebalanceInfo(priceDiff.platform2Id)}
+        entrySpread={shortExchangeId === priceDiff.platform2Id ? entrySpread : undefined}
       />
       <SpreadRow
         label={`-${priceDiff.platform2Id}+${priceDiff.platform1Id}`}
@@ -239,6 +244,7 @@ export function ActionPanel({
           setMonitor1to2((prev) => ({ ...prev, isMonitoring: !prev.isMonitoring }))
         }
         rebalanceInfo={getRebalanceInfo(priceDiff.platform1Id)}
+        entrySpread={shortExchangeId === priceDiff.platform1Id ? entrySpread : undefined}
       />
 
       {tradeLogs.length > 0 && (

@@ -8,7 +8,6 @@ const STORAGE_KEYS = {
   EXCHANGE_CONFIGS: 'arbflow_exchange_configs',
   GLOBAL_TRADE_INTERVAL: 'arbflow_global_trade_interval',
   CONSECUTIVE_TRIGGER_COUNT: 'arbflow_consecutive_trigger_count',
-  AUTO_RESTART_ON_UNBALANCED: 'arbflow_auto_restart_on_unbalanced',
   AUTO_REBALANCE_ON_ERROR: 'arbflow_auto_rebalance_on_error',
   SOUND_ENABLED: 'arbflow_sound_enabled',
 }
@@ -22,8 +21,7 @@ export function useSettings() {
   const [omniConfig, setOmniConfig] = useState<OmniConfig>(DEFAULT_OMNI_CONFIG)
   const [globalTradeInterval, setGlobalTradeInterval] = useState<number>(DEFAULT_GLOBAL_TRADE_INTERVAL)
   const [consecutiveTriggerCount, setConsecutiveTriggerCount] = useState<number>(DEFAULT_CONSECUTIVE_TRIGGER_COUNT)
-  const [autoRestartOnUnbalanced, setAutoRestartOnUnbalanced] = useState<boolean>(false)
-  const [autoRebalanceOnError, setAutoRebalanceOnError] = useState<boolean>(false)
+  const [autoRebalanceEnabled, setAutoRebalanceOnError] = useState<boolean>(false)
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true)
 
   useEffect(() => {
@@ -65,11 +63,6 @@ export function useSettings() {
       if (!isNaN(parsed) && parsed > 0) {
         setConsecutiveTriggerCount(parsed)
       }
-    }
-
-    const savedAutoRestart = localStorage.getItem(STORAGE_KEYS.AUTO_RESTART_ON_UNBALANCED)
-    if (savedAutoRestart) {
-      setAutoRestartOnUnbalanced(savedAutoRestart === 'true')
     }
 
     const savedAutoRebalance = localStorage.getItem(STORAGE_KEYS.AUTO_REBALANCE_ON_ERROR)
@@ -122,12 +115,7 @@ export function useSettings() {
     localStorage.setItem(STORAGE_KEYS.CONSECUTIVE_TRIGGER_COUNT, String(count))
   }, [])
 
-  const saveAutoRestartOnUnbalanced = useCallback((enabled: boolean) => {
-    setAutoRestartOnUnbalanced(enabled)
-    localStorage.setItem(STORAGE_KEYS.AUTO_RESTART_ON_UNBALANCED, String(enabled))
-  }, [])
-
-  const saveAutoRebalanceOnError = useCallback((enabled: boolean) => {
+  const saveAutoRebalanceEnabled = useCallback((enabled: boolean) => {
     setAutoRebalanceOnError(enabled)
     localStorage.setItem(STORAGE_KEYS.AUTO_REBALANCE_ON_ERROR, String(enabled))
   }, [])
@@ -148,10 +136,8 @@ export function useSettings() {
     saveGlobalTradeInterval,
     consecutiveTriggerCount,
     saveConsecutiveTriggerCount,
-    autoRestartOnUnbalanced,
-    saveAutoRestartOnUnbalanced,
-    autoRebalanceOnError,
-    saveAutoRebalanceOnError,
+    autoRebalanceEnabled,
+    saveAutoRebalanceEnabled,
     soundEnabled,
     saveSoundEnabled,
   }

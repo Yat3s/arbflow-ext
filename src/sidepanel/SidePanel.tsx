@@ -50,10 +50,8 @@ export function SidePanel() {
     saveGlobalTradeInterval,
     consecutiveTriggerCount,
     saveConsecutiveTriggerCount,
-    autoRestartOnUnbalanced,
-    saveAutoRestartOnUnbalanced,
-    autoRebalanceOnError,
-    saveAutoRebalanceOnError,
+    autoRebalanceEnabled,
+    saveAutoRebalanceEnabled,
     soundEnabled,
     saveSoundEnabled,
   } = useSettings()
@@ -233,31 +231,16 @@ export function SidePanel() {
             </button>
           </label>
           <label className="flex cursor-pointer items-center gap-2">
-            <span className="text-xs text-muted-foreground">仓位异常自重启</span>
+            <span className="text-xs text-muted-foreground">自动补齐</span>
             <button
-              onClick={() => saveAutoRestartOnUnbalanced(!autoRestartOnUnbalanced)}
+              onClick={() => saveAutoRebalanceEnabled(!autoRebalanceEnabled)}
               className={`relative h-5 w-9 rounded-full transition-colors ${
-                autoRestartOnUnbalanced ? 'bg-primary' : 'bg-muted-foreground/30'
+                autoRebalanceEnabled ? 'bg-primary' : 'bg-muted-foreground/30'
               }`}
             >
               <span
                 className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                  autoRestartOnUnbalanced ? 'translate-x-4' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </label>
-          <label className="flex cursor-pointer items-center gap-2">
-            <span className="text-xs text-muted-foreground">交易失败自补齐</span>
-            <button
-              onClick={() => saveAutoRebalanceOnError(!autoRebalanceOnError)}
-              className={`relative h-5 w-9 rounded-full transition-colors ${
-                autoRebalanceOnError ? 'bg-primary' : 'bg-muted-foreground/30'
-              }`}
-            >
-              <span
-                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                  autoRebalanceOnError ? 'translate-x-4' : 'translate-x-0'
+                  autoRebalanceEnabled ? 'translate-x-4' : 'translate-x-0'
                 }`}
               />
             </button>
@@ -285,8 +268,7 @@ export function SidePanel() {
                   globalLastRefreshTimeRef={globalLastRefreshTimeRef}
                   consecutiveTriggerCount={consecutiveTriggerCount}
                   onRefreshAllExchanges={refreshAllExchanges}
-                  autoRestartOnUnbalanced={autoRestartOnUnbalanced}
-                  autoRebalanceOnError={autoRebalanceOnError}
+                  autoRebalanceEnabled={autoRebalanceEnabled}
                   soundEnabled={soundEnabled}
                 />
               ))}
