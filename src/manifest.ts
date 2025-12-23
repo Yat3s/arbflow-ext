@@ -25,7 +25,7 @@ export default defineManifest({
   },
   content_scripts: [
     {
-      matches: ['https://app.lighter.xyz/*', 'https://omni.variational.io/*'],
+      matches: ['https://app.lighter.xyz/*', 'https://omni.variational.io/*', 'https://arbflow.io/*'],
       js: ['src/contentScript/index.ts'],
       run_at: 'document_start',
     },
@@ -41,6 +41,7 @@ export default defineManifest({
     'https://omni.variational.io/*',
     'https://mainnet.zklighter.elliot.ai/*',
     'https://ws.geek4.fun/*',
+    'https://arbflow.io/*',
     '<all_urls>',
   ],
   web_accessible_resources: [

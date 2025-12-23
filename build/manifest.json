@@ -1,7 +1,7 @@
 {
-  "name": "Arbflow Extension",
+  "name": "Arbflow Extension ➡️ Dev",
   "description": "",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "manifest_version": 3,
   "icons": {
     "16": "img/logo-16.png",
@@ -19,12 +19,13 @@
   },
   "content_scripts": [
     {
-      "js": [
-        "assets/index.ts-loader-BTxte-RF.js"
-      ],
       "matches": [
         "https://app.lighter.xyz/*",
-        "https://omni.variational.io/*"
+        "https://omni.variational.io/*",
+        "https://arbflow.io/*"
+      ],
+      "js": [
+        "src/contentScript/index.ts-loader.js"
       ],
       "run_at": "document_start"
     }
@@ -40,15 +41,11 @@
     "https://omni.variational.io/*",
     "https://mainnet.zklighter.elliot.ai/*",
     "https://ws.geek4.fun/*",
+    "https://arbflow.io/*",
     "<all_urls>"
   ],
   "web_accessible_resources": [
     {
-      "matches": [
-        "<all_urls>",
-        "https://app.lighter.xyz/*",
-        "https://omni.variational.io/*"
-      ],
       "resources": [
         "img/logo-16.png",
         "img/logo-32.png",
@@ -58,16 +55,19 @@
         "wasm_exec.js",
         "lighter-signer.wasm"
       ],
-      "use_dynamic_url": false
+      "matches": [
+        "https://app.lighter.xyz/*",
+        "https://omni.variational.io/*",
+        "<all_urls>"
+      ]
     },
     {
       "matches": [
-        "https://app.lighter.xyz/*",
-        "https://omni.variational.io/*"
+        "<all_urls>"
       ],
       "resources": [
-        "assets/chunk-CgcjkoXT.js",
-        "assets/chunk-DOtqjKp5.js"
+        "**/*",
+        "*"
       ],
       "use_dynamic_url": false
     }

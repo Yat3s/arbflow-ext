@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getAuthState, isAuthenticated, logout, refreshUserInfo, type AuthState } from '../lib/auth'
 import { fetchLighterAccountIndex } from '../lib/lighter-api'
 import { SYMBOL_MARKET_ID_MAP } from '../lib/symbols'
-import { ExchangeCard, SettingsDialog, StatusToast, SymbolCard } from './components'
+import { ExchangeCard, LoginPage, SettingsDialog, StatusToast, SymbolCard } from './components'
 import { useExchanges, useSettings, useTrade } from './hooks'
 
 const MIN_WIDTH = 500
@@ -41,6 +42,49 @@ function WidthOverlay() {
 export function SidePanel() {
   const windowWidth = useWindowWidth()
   const isTooNarrow = windowWidth < MIN_WIDTH
+  const [authState, setAuthState] = useState<AuthState | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [accountDisabled, setAccountDisabled] = useState(false)
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const authenticated = await isAuthenticated()
+      if (authenticated) {
+        const state = await getAuthState()
+        setAuthState(state)
+        refreshUserInfo().then(async (user) => {
+          if (user) {
+            if (user.isActive === false) {
+              await logout()
+              setAuthState(null)
+              setAccountDisabled(true)
+            } else {
+              setAuthState((prev) => (prev ? { ...prev, user } : null))
+            }
+          }
+        })
+      } else {
+        setAuthState(null)
+      }
+      setAuthLoading(false)
+    }
+    checkAuth()
+
+    const handleMessage = (message: { type: string }) => {
+      if (message.type === 'AUTH_SUCCESS') {
+        setAccountDisabled(false)
+        checkAuth()
+      }
+    }
+    chrome.runtime.onMessage.addListener(handleMessage)
+    return () => chrome.runtime.onMessage.removeListener(handleMessage)
+  }, [])
+
+  const handleLogout = async () => {
+    await logout()
+    setAuthState(null)
+  }
+
   const {
     watchedSymbols,
     saveWatchedSymbols,
@@ -58,17 +102,8 @@ export function SidePanel() {
   const globalLastTradeTimeRef = useRef<number>(0)
   const globalLastRefreshTimeRef = useRef<number>(0)
 
-  const {
-    exchanges,
-    symbolStates,
-    lighterWsMessages,
-    openExchange,
-    focusTab,
-    refreshTab,
-    refreshAllExchanges,
-    connectLighterWs,
-    disconnectLighterWs,
-  } = useExchanges(watchedSymbols, lighterConfig)
+  const { exchanges, symbolStates, openExchange, focusTab, refreshTab, refreshAllExchanges } =
+    useExchanges(watchedSymbols, lighterConfig)
 
   const { doTrades } = useTrade({
     exchanges,
@@ -78,9 +113,22 @@ export function SidePanel() {
   })
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [status, setStatus] = useState<{ message: string; isSuccess: boolean } | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [showWsDebug, setShowWsDebug] = useState(false)
+  const userMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false)
+      }
+    }
+    if (userMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [userMenuOpen])
 
   const showStatus = useCallback((message: string, isSuccess: boolean) => {
     setStatus({ message, isSuccess })
@@ -136,6 +184,18 @@ export function SidePanel() {
     (a, b) => (SYMBOL_MARKET_ID_MAP[a] ?? 999) - (SYMBOL_MARKET_ID_MAP[b] ?? 999),
   )
 
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (!authState) {
+    return <LoginPage accountDisabled={accountDisabled} />
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="flex items-center justify-between px-4 py-3">
@@ -183,6 +243,42 @@ export function SidePanel() {
           >
             ⚙
           </button>
+          <div className="relative" ref={userMenuRef}>
+            <button
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-primary/20 text-sm font-medium text-primary transition-colors hover:bg-primary/30"
+            >
+              {authState.user?.image ? (
+                <img src={authState.user.image} alt="" className="h-full w-full object-cover" />
+              ) : (
+                authState.user?.email?.charAt(0).toUpperCase() || '?'
+              )}
+            </button>
+            {userMenuOpen && (
+              <div className="absolute right-0 top-10 z-50 min-w-48 rounded-lg border border-border bg-background p-3 shadow-lg">
+                <div className="mb-3 space-y-1">
+                  <p className="text-sm font-medium">{authState.user?.email}</p>
+                  {authState.user?.level != null && (
+                    <p className="text-xs text-muted-foreground">
+                      等级:{' '}
+                      <span className="rounded bg-primary/20 px-1.5 py-0.5 text-primary">
+                        Lv.{authState.user.level}
+                      </span>
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    handleLogout()
+                    setUserMenuOpen(false)
+                  }}
+                  className="w-full cursor-pointer rounded-md bg-muted px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+                >
+                  登出
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -291,50 +387,6 @@ export function SidePanel() {
             ))}
           </div>
         </section>
-
-        {/* <section className="mt-6">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-medium text-muted-foreground">Lighter WS Debug</h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={connectLighterWs}
-                className="cursor-pointer rounded bg-primary/10 px-3 py-1 text-xs text-primary hover:bg-primary/20"
-              >
-                Connect
-              </button>
-              <button
-                onClick={disconnectLighterWs}
-                className="cursor-pointer rounded bg-destructive/10 px-3 py-1 text-xs text-destructive hover:bg-destructive/20"
-              >
-                Disconnect
-              </button>
-              <button
-                onClick={() => setShowWsDebug(!showWsDebug)}
-                className="cursor-pointer rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-              >
-                {showWsDebug ? '▼ Hide' : '▶ Show'}
-              </button>
-            </div>
-          </div>
-          {showWsDebug && (
-            <div className="rounded-lg border p-3">
-              <h3 className="mb-2 text-xs font-medium text-muted-foreground">
-                Messages ({lighterWsMessages.length})
-              </h3>
-              {lighterWsMessages.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No messages received</p>
-              ) : (
-                <div className="max-h-48 space-y-1 overflow-auto">
-                  {lighterWsMessages.map((msg, idx) => (
-                    <div key={idx} className="font-mono text-xs text-muted-foreground">
-                      {msg}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </section> */}
       </main>
 
       <SettingsDialog

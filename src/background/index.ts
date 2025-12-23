@@ -1,4 +1,8 @@
+import { getBridgeUrl, handleAuthCode } from '../lib/auth'
+
 console.log('🚀 Background Service Worker started')
+
+const BRIDGE_URL = getBridgeUrl()
 
 interface NetworkRequest {
   requestId: string
@@ -138,6 +142,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CLEAR_NETWORK_REQUESTS') {
     clearMonitoringRequests(message.tabId)
     sendResponse({ success: true })
+  }
+
+  if (message.type === 'AUTH_CODE_RECEIVED') {
+    console.log('🔐 Received auth code from bridge page')
+    handleAuthCode(message.code)
+      .then(() => {
+        console.log('✅ Auth successful, closing tab')
+        if (sender.tab?.id) {
+          chrome.tabs.remove(sender.tab.id)
+        }
+        broadcastToSidePanel({ type: 'AUTH_SUCCESS', target: 'sidepanel' })
+        sendResponse({ success: true })
+      })
+      .catch((error) => {
+        console.error('❌ Auth failed:', error)
+        broadcastToSidePanel({ type: 'AUTH_FAILED', target: 'sidepanel', error: error.message })
+        sendResponse({ success: false, error: error.message })
+      })
+    return true
   }
 
   return false
