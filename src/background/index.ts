@@ -129,6 +129,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     broadcastToSidePanel(enhancedMessage)
   }
 
+  if (message.type === 'ARBFLOW_TRADE_BUTTON_CLICK' || message.type === 'LG_ORDER_FORM_UPDATE') {
+    broadcastToSidePanel(message)
+  }
+
   if (message.type === 'START_NETWORK_MONITOR') {
     startMonitoringTab(message.tabId)
     sendResponse({ success: true })
@@ -168,10 +172,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function broadcastToSidePanel(message: Record<string, unknown>) {
   try {
-    const windows = await chrome.windows.getAll()
-    for (const _ of windows) {
-      chrome.runtime.sendMessage({ ...message, target: 'sidepanel' }).catch(() => { })
-    }
+    chrome.runtime.sendMessage({ ...message, target: 'sidepanel' }).catch(() => { })
   } catch (_) { }
 }
 
