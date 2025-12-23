@@ -5,7 +5,7 @@ import { SYMBOL_MARKET_ID_MAP } from '../lib/symbols'
 import { ExchangeCard, LoginPage, SettingsDialog, StatusToast, SymbolCard } from './components'
 import { useExchanges, useSettings, useTrade } from './hooks'
 
-const MIN_WIDTH = 500
+const MIN_WIDTH = 460
 
 function useWindowWidth() {
   const [width, setWidth] = useState(window.innerWidth)
@@ -201,33 +201,6 @@ export function SidePanel() {
       <header className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold">Arbflow</h1>
-          <span className="text-xs text-muted-foreground">
-            {(() => {
-              const lg = exchanges.find((e) => e.id === 'LG')?.accountInfo
-              const om = exchanges.find((e) => e.id === 'OM')?.accountInfo
-              const lgVal = lg?.portfolioValue
-              const omVal = om?.portfolioValue
-              const lgLev = lg?.leverage
-              const omLev = om?.leverage
-
-              if (lgVal == null && omVal == null) return null
-
-              const parts: string[] = []
-              if (lgVal != null) {
-                parts.push(`LG(${lgVal.toFixed(1)})`)
-              }
-              if (omVal != null) {
-                parts.push(`OM(${omVal.toFixed(1)})`)
-              }
-
-              const total = (lgVal ?? 0) + (omVal ?? 0)
-              return (
-                <>
-                  {parts.join(' + ')} = <span className="font-semibold">{total.toFixed(1)}</span>
-                </>
-              )
-            })()}
-          </span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -243,7 +216,12 @@ export function SidePanel() {
           >
             ⚙
           </button>
-          <div className="relative" ref={userMenuRef}>
+          <div className="relative flex items-center gap-2" ref={userMenuRef}>
+            {authState.user?.level != null && (
+              <span className="rounded bg-primary/20 px-1.5 py-0.5 text-xs text-primary">
+                Lv.{authState.user.level}
+              </span>
+            )}
             <button
               onClick={() => setUserMenuOpen(!userMenuOpen)}
               className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-primary/20 text-sm font-medium text-primary transition-colors hover:bg-primary/30"
@@ -374,7 +352,32 @@ export function SidePanel() {
 
         <section className="mt-6">
           <h2 className="mb-3 text-sm font-medium text-muted-foreground">Exchanges</h2>
-          <div className="space-y-2">
+          <span className="text-xs text-muted-foreground">
+            {(() => {
+              const lg = exchanges.find((e) => e.id === 'LG')?.accountInfo
+              const om = exchanges.find((e) => e.id === 'OM')?.accountInfo
+              const lgVal = lg?.portfolioValue
+              const omVal = om?.portfolioValue
+
+              if (lgVal == null && omVal == null) return null
+
+              const parts: string[] = []
+              if (lgVal != null) {
+                parts.push(`LG(${lgVal.toFixed(1)})`)
+              }
+              if (omVal != null) {
+                parts.push(`OM(${omVal.toFixed(1)})`)
+              }
+
+              const total = (lgVal ?? 0) + (omVal ?? 0)
+              return (
+                <>
+                  {parts.join(' + ')} = <span className="font-semibold">{total.toFixed(1)}</span>
+                </>
+              )
+            })()}
+          </span>
+          <div className="space-y-2 mt-2">
             {exchanges.map((exchange) => (
               <ExchangeCard
                 key={exchange.id}
