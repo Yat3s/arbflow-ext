@@ -11,8 +11,8 @@ const SITE_TYPE: ExtendedSiteType = window.location.hostname.includes('lighter.x
             ? 'arbflow'
             : null
 
-function getExchangeConfigBySiteType(siteType: SiteType) {
-    if (!siteType) return null
+function getExchangeConfigBySiteType(siteType: ExtendedSiteType) {
+    if (!siteType || siteType === 'arbflow') return null
     return EXCHANGES.find((e) => e.id === siteType) || null
 }
 
@@ -53,8 +53,8 @@ function setupBridgeListener() {
             }
         })
 
-        observer.observe(document.documentElement, { 
-            childList: true, 
+        observer.observe(document.documentElement, {
+            childList: true,
             subtree: true,
             attributes: true,
             attributeFilter: ['content']
