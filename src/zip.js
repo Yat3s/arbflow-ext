@@ -10,6 +10,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const manifest = require('../build/manifest.json')
 
 const packageJsonPath = path.resolve(__dirname, '../package.json')
+const packageDir = path.resolve(__dirname, '../package')
+const MAX_VERSIONS = 3
+
+function cleanOldVersions() {
+  const files = fs
+    .readdirSync(packageDir)
+    .filter((f) => f.endsWith('.zip'))
+    .map((f) => ({
+      name: f,
+      path: path.join(packageDir, f),
+      mtime: fs.statSync(path.join(packageDir, f)).mtime.getTime(),
+    }))
+    .sort((a, b) => b.mtime - a.mtime)
+
+  if (files.length > MAX_VERSIONS) {
+    files.slice(MAX_VERSIONS).forEach((f) => {
+      fs.unlinkSync(f.path)
+      console.log(`Deleted old version: ${f.name}`)
+    })
+  }
+}
 
 function bumpVersion() {
   const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
@@ -23,4 +44,7 @@ gulp
   .src('build/**', { encoding: false })
   .pipe(zip(`${manifest.name.replaceAll(' ', '-')}-${manifest.version}.zip`))
   .pipe(gulp.dest('package'))
-  .on('end', bumpVersion)
+  .on('end', () => {
+    cleanOldVersions()
+    bumpVersion()
+  })

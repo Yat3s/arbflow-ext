@@ -1,5 +1,5 @@
 {
-  "name": "Arbflow Extension ➡️ Dev",
+  "name": "Arbflow Extension",
   "description": "",
   "version": "1.0.19",
   "manifest_version": 3,
@@ -19,13 +19,13 @@
   },
   "content_scripts": [
     {
+      "js": [
+        "assets/index.ts-loader-CfcozrLn.js"
+      ],
       "matches": [
         "https://app.lighter.xyz/*",
         "https://omni.variational.io/*",
         "https://arbflow.io/*"
-      ],
-      "js": [
-        "src/contentScript/index.ts-loader.js"
       ],
       "run_at": "document_start"
     }
@@ -46,6 +46,11 @@
   ],
   "web_accessible_resources": [
     {
+      "matches": [
+        "<all_urls>",
+        "https://app.lighter.xyz/*",
+        "https://omni.variational.io/*"
+      ],
       "resources": [
         "img/logo-16.png",
         "img/logo-32.png",
@@ -55,19 +60,17 @@
         "wasm_exec.js",
         "lighter-signer.wasm"
       ],
-      "matches": [
-        "https://app.lighter.xyz/*",
-        "https://omni.variational.io/*",
-        "<all_urls>"
-      ]
+      "use_dynamic_url": false
     },
     {
       "matches": [
-        "<all_urls>"
+        "https://app.lighter.xyz/*",
+        "https://arbflow.io/*",
+        "https://omni.variational.io/*"
       ],
       "resources": [
-        "**/*",
-        "*"
+        "assets/chunk-CgcjkoXT.js",
+        "assets/chunk-_i-uDMLD.js"
       ],
       "use_dynamic_url": false
     }
