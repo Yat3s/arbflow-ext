@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { EXCHANGES } from '../../lib/config'
 import { createLighterAuthToken, LIGHTER_WS_URL } from '../../lib/lighter-api'
 import { decodeMsgpack } from '../../lib/msgpack'
+import { fetchOmWalletAddress } from '../../lib/omni'
 import { parseMessage } from '../../lib/parsers'
 import {
   ALL_SYMBOLS_DATA,
@@ -302,39 +303,19 @@ export function useExchanges(watchedSymbols: string[], lighterConfig?: LighterCo
 
   const fetchOmniAccountInfo = useCallback(async (tabId: number) => {
     console.log('[Arbflow] Fetching OM account info, tabId:', tabId)
-    try {
-      const result = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: () => {
-          return fetch('https://omni.variational.io/api/settlement_pools/existing')
-            .then((response) => {
-              if (!response.ok) return null
-              return response.json()
-            })
-            .then((data) => {
-              console.log('[Arbflow] OM account info:', data)
-              return data?.address_other || null
-            })
-            .catch(() => null)
-        },
+    const walletAddress = await fetchOmWalletAddress(tabId)
+    if (walletAddress) {
+      setExchanges((p) => {
+        const current = p.find((ex) => ex.id === 'OM')
+        if (current?.accountInfo?.walletAddress === walletAddress) {
+          return p
+        }
+        return p.map((ex) =>
+          ex.id === 'OM'
+            ? { ...ex, accountInfo: { ...ex.accountInfo, walletAddress } }
+            : ex
+        )
       })
-      console.log('[Arbflow] OM script result:', result)
-      const walletAddress = result?.[0]?.result
-      if (walletAddress) {
-        setExchanges((p) => {
-          const current = p.find((ex) => ex.id === 'OM')
-          if (current?.accountInfo?.walletAddress === walletAddress) {
-            return p
-          }
-          return p.map((ex) =>
-            ex.id === 'OM'
-              ? { ...ex, accountInfo: { ...ex.accountInfo, walletAddress } }
-              : ex
-          )
-        })
-      }
-    } catch (e) {
-      console.error('[Arbflow] Failed to fetch OM account info:', e)
     }
   }, [])
 

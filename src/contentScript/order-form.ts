@@ -102,20 +102,32 @@ function updateArbflowButton(state: LighterOrderFormState) {
     const sizeNum = parseFloat(size) || 0
 
     arbflowButton.disabled = sizeNum === 0
+    arbflowButton.style.setProperty('height', '60px', 'important')
+
+    let mainText = '选择方向'
+    let borderColor = '#6b7280'
+    let background = '#374151'
 
     if (direction === 'long') {
-        arbflowButton.textContent = `买 LG 卖 OM(${sizeNum} ${symbol})`
-        arbflowButton.style.borderColor = '#22c55e'
-        arbflowButton.style.background = 'linear-gradient(135deg, #166534 0%, #14532d 100%)'
+        mainText = `- LG + OM (${sizeNum} ${symbol})`
+        borderColor = '#22c55e'
+        background = 'linear-gradient(135deg, #166534 0%, #14532d 100%)'
     } else if (direction === 'short') {
-        arbflowButton.textContent = `卖 LG 买 OM(${sizeNum} ${symbol})`
-        arbflowButton.style.borderColor = '#ef4444'
-        arbflowButton.style.background = 'linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)'
-    } else {
-        arbflowButton.textContent = '选择方向'
-        arbflowButton.style.borderColor = '#6b7280'
-        arbflowButton.style.background = '#374151'
+        mainText = `+ LG + OM (${sizeNum} ${symbol})`
+        borderColor = '#ef4444'
+        background = 'linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)'
     }
+
+    arbflowButton.style.borderColor = borderColor
+    arbflowButton.style.background = background
+    arbflowButton.style.display = 'flex'
+    arbflowButton.style.flexDirection = 'column'
+    arbflowButton.style.alignItems = 'center'
+    arbflowButton.style.justifyContent = 'center'
+    arbflowButton.innerHTML = `
+        <span style="font-size: 16px; font-weight: bold;">${mainText}</span>
+        <span style="font-size: 8px; opacity: 0.6; margin-top: 4px;">按回车点击</span>
+    `
 }
 
 function sendOrderFormUpdate() {
@@ -200,6 +212,20 @@ function injectArbflowButton() {
 
     const state = getLighterOrderFormState()
     updateArbflowButton(state)
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && arbflowButton && !arbflowButton.disabled) {
+            const activeEl = document.activeElement
+            const isInputFocused =
+                activeEl?.tagName === 'INPUT' ||
+                activeEl?.tagName === 'TEXTAREA' ||
+                activeEl?.getAttribute('contenteditable') === 'true'
+            if (!isInputFocused) {
+                e.preventDefault()
+                arbflowButton.click()
+            }
+        }
+    })
 
     console.log('[Arbflow] ✅ Injected Arbflow trade button')
 }

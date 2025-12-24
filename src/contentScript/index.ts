@@ -41,8 +41,15 @@ if (SITE_TYPE) {
 }
 
 if (SITE_TYPE === 'lighter') {
-    startOrderFormObserver()
-    startLGPositionsObserver()
+    chrome.storage.local.get('arbflow_lg_injection_enabled').then((result) => {
+        const enabled = result['arbflow_lg_injection_enabled'] !== false
+        if (enabled) {
+            startOrderFormObserver()
+            startLGPositionsObserver()
+        } else {
+            console.log('[Arbflow] LG injection disabled by user')
+        }
+    })
 }
 
 if (SITE_TYPE === 'omni') {

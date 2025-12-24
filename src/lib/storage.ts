@@ -26,4 +26,22 @@ export function saveSymbolSettings(symbol: string, settings: SymbolSettings): vo
   }
 }
 
+const LG_INJECTION_ENABLED_KEY = 'arbflow_lg_injection_enabled'
+
+export async function getLgInjectionEnabled(): Promise<boolean> {
+  try {
+    const result = await chrome.storage.local.get(LG_INJECTION_ENABLED_KEY)
+    return result[LG_INJECTION_ENABLED_KEY] !== false
+  } catch {
+    return true
+  }
+}
+
+export async function setLgInjectionEnabled(enabled: boolean): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [LG_INJECTION_ENABLED_KEY]: enabled })
+  } catch {
+    // ignore
+  }
+}
 
