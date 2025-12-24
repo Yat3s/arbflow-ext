@@ -19,18 +19,9 @@ function useWindowWidth() {
 
 function WidthOverlay() {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
-      <div className="flex items-center gap-4 text-muted-foreground">
-        <div className="flex h-12 w-12 animate-pulse items-center justify-center rounded-full bg-muted">
-          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-        </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-start bg-background/95 pl-6 backdrop-blur-sm">
+      <div className="flex items-center gap-3 text-muted-foreground">
+        <span className="animate-pulse text-3xl">👈</span>
         <span className="text-lg font-medium">向左拖动扩展视图</span>
       </div>
     </div>
@@ -196,7 +187,7 @@ export function SidePanel() {
         <MainContentFree />
       )}
 
-      {isTooNarrow && <WidthOverlay />}
+      {isTooNarrow && userLevel > 1 && <WidthOverlay />}
     </div>
   )
 }

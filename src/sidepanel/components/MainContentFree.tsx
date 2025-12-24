@@ -251,10 +251,8 @@ export function MainContentFree() {
         </div>
       )}
 
-      <div className="mt-8 text-center">
-        <div className="mb-4 text-6xl">🚀</div>
-        <h2 className="mb-2 text-xl font-semibold">Free Plan</h2>
-        <p className="text-muted-foreground">升级 Level 以解锁全部功能</p>
+      <div className="mt-auto pt-8 text-xs text-muted-foreground">
+        v{chrome.runtime.getManifest().version}
       </div>
     </main>
   )
