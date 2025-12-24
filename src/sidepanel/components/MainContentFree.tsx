@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Position } from '../../lib/types'
 
 interface OMTrade {
   symbol: string
@@ -11,6 +12,7 @@ export function MainContentFree() {
   const [omTabId, setOmTabId] = useState<number | null>(null)
   const [tradeStatus, setTradeStatus] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [omPositions, setOmPositions] = useState<Position[]>([])
   const isExecutingRef = useRef(false)
   const lastTradeTimestampRef = useRef<number>(0)
 
@@ -30,19 +32,39 @@ export function MainContentFree() {
     }
   }, [])
 
+  const sendPositionsToLG = useCallback(
+    async (positions: Position[]) => {
+      if (!lgTabId) return
+
+      try {
+        await chrome.tabs.sendMessage(lgTabId, {
+          type: 'UPDATE_OM_POSITIONS',
+          positions,
+        })
+      } catch (e) {
+        console.log('[Arbflow Free] Failed to send positions to LG:', e)
+      }
+    },
+    [lgTabId],
+  )
+
   const handleRefreshTabs = useCallback(async () => {
     setIsRefreshing(true)
     setTradeStatus('Refreshing tabs...')
 
     try {
-      const lgTabs = await chrome.tabs.query({ url: 'https://app.lighter.xyz/*' })
-      const omTabs = await chrome.tabs.query({ url: 'https://omni.variational.io/*' })
+      let lgTabs = await chrome.tabs.query({ url: 'https://app.lighter.xyz/*' })
+      let omTabs = await chrome.tabs.query({ url: 'https://omni.variational.io/*' })
 
-      if (omTabs.length > 0 && omTabs[0].id) {
+      if (omTabs.length === 0) {
+        await chrome.tabs.create({ url: 'https://omni.variational.io/', active: false })
+      } else if (omTabs[0].id) {
         await chrome.tabs.reload(omTabs[0].id)
       }
 
-      if (lgTabs.length > 0 && lgTabs[0].id) {
+      if (lgTabs.length === 0) {
+        await chrome.tabs.create({ url: 'https://app.lighter.xyz/', active: false })
+      } else if (lgTabs[0].id) {
         await chrome.tabs.reload(lgTabs[0].id)
       }
 
@@ -50,6 +72,7 @@ export function MainContentFree() {
 
       await findTabs()
 
+      lgTabs = await chrome.tabs.query({ url: 'https://app.lighter.xyz/*' })
       if (lgTabs.length > 0 && lgTabs[0].id) {
         await chrome.tabs.update(lgTabs[0].id, { active: true })
         const tab = await chrome.tabs.get(lgTabs[0].id)
@@ -159,17 +182,30 @@ export function MainContentFree() {
   }, [findTabs])
 
   useEffect(() => {
+    if (omPositions.length > 0 && lgTabId) {
+      sendPositionsToLG(omPositions)
+    }
+  }, [omPositions, lgTabId, sendPositionsToLG])
+
+  useEffect(() => {
     const handleMessage = (message: {
       type: string
       target?: string
       omTrade?: OMTrade
       timestamp?: number
+      exchange?: string
+      positions?: Position[]
     }) => {
       if (message.target !== 'sidepanel') return
 
       if (message.type === 'ARBFLOW_TRADE_BUTTON_CLICK' && message.omTrade && message.timestamp) {
         console.log('[Arbflow Free] Trade button clicked, executing OM trade:', message.omTrade)
         executeOMTrade(message.omTrade, message.timestamp)
+      }
+
+      if (message.type === 'POSITIONS' && message.exchange === 'OM' && message.positions) {
+        console.log('[Arbflow Free] Received OM positions:', message.positions)
+        setOmPositions(message.positions)
       }
     }
 
@@ -218,7 +254,7 @@ export function MainContentFree() {
       <div className="mt-8 text-center">
         <div className="mb-4 text-6xl">🚀</div>
         <h2 className="mb-2 text-xl font-semibold">Free Plan</h2>
-        <p className="text-muted-foreground">升级到 Pro 版本以解锁全部功能</p>
+        <p className="text-muted-foreground">升级 Level 以解锁全部功能</p>
       </div>
     </main>
   )

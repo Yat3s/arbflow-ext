@@ -133,6 +133,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     broadcastToSidePanel(message)
   }
 
+  if (message.type === 'POSITIONS' || message.type === 'ACCOUNT_INFO') {
+    broadcastToSidePanel(message)
+  }
+
   if (message.type === 'START_NETWORK_MONITOR') {
     startMonitoringTab(message.tabId)
     sendResponse({ success: true })
