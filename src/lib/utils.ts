@@ -1,3 +1,10 @@
+import { clsx, type ClassValue } from "clsx"
+import { twMerge } from "tailwind-merge"
+
+export function cn(...inputs: ClassValue[]) {
+    return twMerge(clsx(inputs))
+}
+
 const TIME_SKEW_THRESHOLD = 5000
 
 export interface FormattedTime {
@@ -25,9 +32,11 @@ export function formatPrice(price: number, referencePrice?: number): string {
     return price.toFixed(6)
 }
 
-export function formatBps(percentage: number, options?: { showSign?: boolean }): string {
+export function formatBps(
+    percentage: number,
+    options?: { showSign?: boolean }
+): string {
     const bps = percentage * 100
     const sign = options?.showSign && bps >= 0 ? '+' : ''
     return `${sign}${bps.toFixed(1)}bp`
 }
-

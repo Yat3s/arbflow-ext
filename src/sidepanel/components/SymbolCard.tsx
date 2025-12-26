@@ -137,7 +137,7 @@ export function SymbolCard({
     logIdRef.current += 1
     setTradeLogs((prev) => [
       { id: logIdRef.current, timestamp: new Date(), message },
-      ...prev.slice(0, 49),
+      ...prev.slice(0, 1000),
     ])
   }
 

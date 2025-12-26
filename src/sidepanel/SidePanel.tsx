@@ -50,6 +50,8 @@ export function SidePanel() {
     saveAutoRebalanceEnabled,
     soundEnabled,
     saveSoundEnabled,
+    useProMode,
+    saveUseProMode,
   } = useSettings()
 
   useEffect(() => {
@@ -124,6 +126,16 @@ export function SidePanel() {
           <h1 className="text-lg font-semibold">Arbflow</h1>
         </div>
         <div className="flex items-center gap-2">
+          {userLevel > 1 && (
+            <button
+              onClick={() => saveUseProMode(!useProMode)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs transition-colors hover:bg-muted/80"
+            >
+              <span className={useProMode ? 'text-primary' : 'text-muted-foreground'}>Pro</span>
+              <span className="text-muted-foreground">/</span>
+              <span className={!useProMode ? 'text-primary' : 'text-muted-foreground'}>Free</span>
+            </button>
+          )}
           <div className="relative flex items-center gap-2" ref={userMenuRef}>
             {authState.user?.level != null && (
               <span className="rounded bg-primary/20 px-1.5 py-0.5 text-xs text-primary">
@@ -168,7 +180,7 @@ export function SidePanel() {
         </div>
       </header>
 
-      {userLevel > 1 ? (
+      {userLevel > 1 && useProMode ? (
         <MainContentPro
           watchedSymbols={watchedSymbols}
           saveWatchedSymbols={saveWatchedSymbols}

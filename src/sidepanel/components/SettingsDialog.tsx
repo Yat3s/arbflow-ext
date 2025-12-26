@@ -1,4 +1,15 @@
-import { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from '@/components/ui/drawer'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
+import { useEffect, useState } from 'react'
 import { ALL_SYMBOLS } from '../../lib/symbols'
 import type { LighterConfig } from '../../lib/types'
 
@@ -8,7 +19,9 @@ interface SettingsDialogProps {
   watchedSymbols: string[]
   onSaveSymbols: (symbols: string[]) => void
   lighterConfig: LighterConfig
-  onSaveLighterConfig: (config: Partial<LighterConfig>) => Promise<{ success: boolean; accountIndex?: number; error?: string }>
+  onSaveLighterConfig: (
+    config: Partial<LighterConfig>,
+  ) => Promise<{ success: boolean; accountIndex?: number; error?: string }>
 }
 
 export function SettingsDialog({
@@ -26,7 +39,10 @@ export function SettingsDialog({
   const [apiKeyIndex, setApiKeyIndex] = useState(4)
   const [accountType, setAccountType] = useState<'main' | 'sub'>('main')
   const [showApiKey, setShowApiKey] = useState(false)
-  const [configStatus, setConfigStatus] = useState<{ message: string; isError: boolean } | null>(null)
+  const [configStatus, setConfigStatus] = useState<{
+    message: string
+    isError: boolean
+  } | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
@@ -42,7 +58,7 @@ export function SettingsDialog({
   }, [open, watchedSymbols, lighterConfig])
 
   const filteredSymbols = ALL_SYMBOLS.filter((s) =>
-    s.toLowerCase().includes(searchTerm.toLowerCase())
+    s.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
   const toggleSymbol = (symbol: string) => {
@@ -94,41 +110,34 @@ export function SettingsDialog({
     }
   }
 
-  if (!open) return null
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div
-        className="max-h-[90vh] w-[90vw] max-w-md overflow-hidden rounded-lg bg-background shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <h2 className="font-semibold">Settings</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            ✕
-          </button>
-        </div>
+    <Drawer open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <DrawerContent>
+        <DrawerHeader>
+          <DrawerTitle>Settings</DrawerTitle>
+        </DrawerHeader>
 
-        <div className="max-h-[60vh] overflow-y-auto p-4">
+        <div className="max-h-[60vh] overflow-y-auto px-4">
           <div className="mb-4">
-            <h3 className="mb-2 font-medium">Watched Symbols ({selectedSymbols.size})</h3>
-            <input
+            <h3 className="mb-2 text-sm font-medium">Watched Symbols ({selectedSymbols.size})</h3>
+            <Input
               type="text"
               placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="mb-2 w-full rounded border bg-background px-3 py-2 text-sm"
+              className="mb-2"
             />
             <div className="grid max-h-40 grid-cols-4 gap-1 overflow-y-auto">
               {filteredSymbols.map((symbol) => (
                 <button
                   key={symbol}
                   onClick={() => toggleSymbol(symbol)}
-                  className={`rounded px-2 py-1 text-xs ${
+                  className={cn(
+                    'rounded px-2 py-1 text-xs transition-colors',
                     selectedSymbols.has(symbol)
                       ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted hover:bg-muted/80'
-                  }`}
+                      : 'bg-muted hover:bg-muted/80',
+                  )}
                 >
                   {symbol}
                 </button>
@@ -137,44 +146,39 @@ export function SettingsDialog({
           </div>
 
           <div className="border-t pt-4">
-            <h3 className="mb-2 font-medium">Lighter API Config</h3>
+            <h3 className="mb-2 text-sm font-medium">Lighter API Config</h3>
             <div className="space-y-3">
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">Wallet Address</label>
-                <input
+                <Input
                   type="text"
                   value={l1Address}
                   onChange={(e) => setL1Address(e.target.value)}
                   placeholder="0x..."
-                  className="w-full rounded border bg-background px-3 py-2 text-sm"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">API Private Key</label>
                 <div className="flex gap-2">
-                  <input
+                  <Input
                     type={showApiKey ? 'text' : 'password'}
                     value={apiPrivateKey}
                     onChange={(e) => setApiPrivateKey(e.target.value)}
                     placeholder="Private key..."
-                    className="flex-1 rounded border bg-background px-3 py-2 text-sm"
+                    className="flex-1"
                   />
-                  <button
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="rounded border px-2 text-sm"
-                  >
+                  <Button variant="outline" size="icon" onClick={() => setShowApiKey(!showApiKey)}>
                     {showApiKey ? '🙈' : '👁'}
-                  </button>
+                  </Button>
                 </div>
               </div>
               <div className="flex gap-2">
                 <div className="flex-1">
                   <label className="mb-1 block text-xs text-muted-foreground">API Key Index</label>
-                  <input
+                  <Input
                     type="number"
                     value={apiKeyIndex}
                     onChange={(e) => setApiKeyIndex(parseInt(e.target.value) || 4)}
-                    className="w-full rounded border bg-background px-3 py-2 text-sm"
                   />
                 </div>
                 <div className="flex-1">
@@ -182,7 +186,7 @@ export function SettingsDialog({
                   <select
                     value={accountType}
                     onChange={(e) => setAccountType(e.target.value as 'main' | 'sub')}
-                    className="w-full rounded border bg-background px-3 py-2 text-sm"
+                    className="h-9 w-full rounded-md border bg-background px-3 text-sm"
                   >
                     <option value="main">Main</option>
                     <option value="sub">Sub</option>
@@ -195,7 +199,12 @@ export function SettingsDialog({
                 </div>
               )}
               {configStatus && (
-                <div className={`text-xs ${configStatus.isError ? 'text-red-500' : 'text-green-500'}`}>
+                <div
+                  className={cn(
+                    'text-xs',
+                    configStatus.isError ? 'text-red-500' : 'text-green-500',
+                  )}
+                >
                   {configStatus.message}
                 </div>
               )}
@@ -203,23 +212,15 @@ export function SettingsDialog({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t px-4 py-3">
-          <button
-            onClick={onClose}
-            className="rounded border px-4 py-2 text-sm hover:bg-muted"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
+        <DrawerFooter className="flex-row justify-end gap-2">
+          <DrawerClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </DrawerClose>
+          <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   )
 }
-

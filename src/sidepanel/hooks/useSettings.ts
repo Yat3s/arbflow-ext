@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
   CONSECUTIVE_TRIGGER_COUNT: 'arbflow_consecutive_trigger_count',
   AUTO_REBALANCE_ON_ERROR: 'arbflow_auto_rebalance_on_error',
   SOUND_ENABLED: 'arbflow_sound_enabled',
+  USE_PRO_MODE: 'arbflow_use_pro_mode',
 }
 
 const DEFAULT_GLOBAL_TRADE_INTERVAL = 1000
@@ -23,6 +24,7 @@ export function useSettings() {
   const [consecutiveTriggerCount, setConsecutiveTriggerCount] = useState<number>(DEFAULT_CONSECUTIVE_TRIGGER_COUNT)
   const [autoRebalanceEnabled, setAutoRebalanceOnError] = useState<boolean>(false)
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true)
+  const [useProMode, setUseProMode] = useState<boolean>(true)
 
   useEffect(() => {
     const savedSymbols = localStorage.getItem(STORAGE_KEYS.WATCHED_SYMBOLS)
@@ -73,6 +75,11 @@ export function useSettings() {
     const savedSoundEnabled = localStorage.getItem(STORAGE_KEYS.SOUND_ENABLED)
     if (savedSoundEnabled) {
       setSoundEnabled(savedSoundEnabled === 'true')
+    }
+
+    const savedUseProMode = localStorage.getItem(STORAGE_KEYS.USE_PRO_MODE)
+    if (savedUseProMode) {
+      setUseProMode(savedUseProMode === 'true')
     }
   }, [])
 
@@ -125,6 +132,11 @@ export function useSettings() {
     localStorage.setItem(STORAGE_KEYS.SOUND_ENABLED, String(enabled))
   }, [])
 
+  const saveUseProMode = useCallback((enabled: boolean) => {
+    setUseProMode(enabled)
+    localStorage.setItem(STORAGE_KEYS.USE_PRO_MODE, String(enabled))
+  }, [])
+
   return {
     watchedSymbols,
     saveWatchedSymbols,
@@ -140,6 +152,8 @@ export function useSettings() {
     saveAutoRebalanceEnabled,
     soundEnabled,
     saveSoundEnabled,
+    useProMode,
+    saveUseProMode,
   }
 }
 

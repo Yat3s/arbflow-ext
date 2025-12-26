@@ -2,10 +2,12 @@ import { crx } from '@crxjs/vite-plugin'
 import react from '@vitejs/plugin-react'
 import { readFileSync, writeFileSync } from 'fs'
 import JavaScriptObfuscator from 'javascript-obfuscator'
-import { resolve } from 'path'
+import path, { resolve } from 'path'
 import { defineConfig, type Plugin } from 'vite'
 
 import manifest from './src/manifest'
+
+const __dirname = path.dirname(new URL(import.meta.url).pathname)
 
 function obfuscateInjectedPlugin(): Plugin {
   return {
@@ -53,6 +55,11 @@ export default defineConfig(({ mode }) => {
       },
     },
     plugins: [crx({ manifest }), react(), obfuscateInjectedPlugin()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+      },
+    },
     legacy: {
       skipWebSocketTokenCheck: true,
     },
