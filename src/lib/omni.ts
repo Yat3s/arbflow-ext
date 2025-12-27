@@ -1,4 +1,4 @@
-import type { TradeOrder } from './types'
+import type { Position, TradeOrder } from './types'
 
 export async function fetchOmWalletAddress(tabId: number): Promise<string | null> {
     try {
@@ -18,6 +18,77 @@ export async function fetchOmWalletAddress(tabId: number): Promise<string | null
     } catch (e) {
         console.error('[Arbflow] Failed to fetch OM wallet address:', e)
         return null
+    }
+}
+
+interface OmPositionResponse {
+    position_info: {
+        instrument: {
+            instrument_type: string
+            underlying: string
+            funding_interval_s: number
+            settlement_asset: string
+        }
+        qty: string
+        avg_entry_price: string
+    }
+    price_info: {
+        price: string
+    }
+    value: string
+    upnl: string
+    cum_funding: string
+    estimated_liquidation_price: string
+}
+
+export async function fetchOmPositions(tabId: number): Promise<Position[]> {
+    try {
+        const result = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => {
+                return fetch('https://omni.variational.io/api/positions')
+                    .then((response) => {
+                        if (!response.ok) return null
+                        return response.json()
+                    })
+                    .catch(() => null)
+            },
+        })
+
+        const positions = result?.[0]?.result as OmPositionResponse[] | null
+        if (!positions) return []
+
+        return positions
+            .filter((p) => parseFloat(p.position_info.qty) !== 0)
+            .map((p) => {
+                const qty = parseFloat(p.position_info.qty)
+                const side: 'long' | 'short' = qty > 0 ? 'long' : 'short'
+                const positionSize = Math.abs(qty)
+                const avgEntryPrice = parseFloat(p.position_info.avg_entry_price)
+                const markPrice = parseFloat(p.price_info.price)
+                const positionValue = parseFloat(p.value)
+                const unrealizedPnl = parseFloat(p.upnl)
+                const liqPrice = parseFloat(p.estimated_liquidation_price)
+                const funding = parseFloat(p.cum_funding)
+
+                return {
+                    symbol: p.position_info.instrument.underlying,
+                    position: positionSize,
+                    side,
+                    avgEntryPrice,
+                    markPrice,
+                    positionValue,
+                    unrealizedPnl,
+                    unrealizedPnlPercent: avgEntryPrice > 0 ? (unrealizedPnl / (positionValue - unrealizedPnl)) * 100 : 0,
+                    funding,
+                    liquidationPrice: liqPrice > 0 ? liqPrice : null,
+                    exchangeId: 'omni',
+                    lastUpdated: Date.now(),
+                }
+            })
+    } catch (e) {
+        console.error('[Arbflow] Failed to fetch OM positions:', e)
+        return []
     }
 }
 

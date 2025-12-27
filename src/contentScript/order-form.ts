@@ -109,11 +109,11 @@ function updateArbflowButton(state: LighterOrderFormState) {
     let background = '#374151'
 
     if (direction === 'long') {
-        mainText = `- LG + OM (${sizeNum} ${symbol})`
+        mainText = `+ LG - OM (${sizeNum} ${symbol})`
         borderColor = '#22c55e'
         background = 'linear-gradient(135deg, #166534 0%, #14532d 100%)'
     } else if (direction === 'short') {
-        mainText = `+ LG + OM (${sizeNum} ${symbol})`
+        mainText = `- LG + OM (${sizeNum} ${symbol})`
         borderColor = '#ef4444'
         background = 'linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)'
     }

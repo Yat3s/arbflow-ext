@@ -1,4 +1,4 @@
-import type { MarketInfo, TradeOrder } from './types'
+import type { MarketInfo, Position, TradeOrder } from './types'
 
 export const LIGHTER_BASE_URL = 'https://mainnet.zklighter.elliot.ai'
 export const LIGHTER_WS_URL = 'wss://mainnet.zklighter.elliot.ai/stream'
@@ -826,6 +826,91 @@ async function fetchLighterOrdersPage(
   if (data.code !== 200) return null
 
   return data
+}
+
+interface LighterAccountPosition {
+  market_id: number
+  symbol: string
+  initial_margin_fraction: string
+  open_order_count: number
+  pending_order_count: number
+  position_tied_order_count: number
+  sign: -1 | 1
+  position: string
+  avg_entry_price: string
+  position_value: string
+  unrealized_pnl: string
+  realized_pnl: string
+  liquidation_price: string
+  margin_mode: number
+  allocated_margin: string
+}
+
+interface LighterAccountResponse {
+  code: number
+  total: number
+  accounts: {
+    code: number
+    account_type: number
+    index: number
+    l1_address: string
+    available_balance: string
+    collateral: string
+    account_index: number
+    positions: LighterAccountPosition[]
+    total_asset_value: string
+    cross_asset_value: string
+  }[]
+}
+
+export async function fetchLighterPositions(
+  walletAddress: string,
+  accountIndex: number
+): Promise<Position[]> {
+  const response = await fetch(
+    `${LIGHTER_BASE_URL}/api/v1/account?by=l1_address&value=${walletAddress}`
+  )
+  const data: LighterAccountResponse = await response.json()
+
+  if (data.code !== 200) {
+    throw new Error('Failed to fetch Lighter positions')
+  }
+
+  const account = data.accounts.find(
+    (acc) => acc.index === accountIndex || acc.account_index === accountIndex
+  )
+
+  if (!account) {
+    throw new Error(`No account found with index: ${accountIndex}`)
+  }
+
+  return account.positions
+    .filter((p) => parseFloat(p.position) !== 0)
+    .map((p) => {
+      const positionSize = parseFloat(p.position)
+      const side: 'long' | 'short' = p.sign === 1 ? 'long' : 'short'
+      const avgEntryPrice = parseFloat(p.avg_entry_price)
+      const positionValue = parseFloat(p.position_value)
+      const unrealizedPnl = parseFloat(p.unrealized_pnl)
+      const liqPrice = parseFloat(p.liquidation_price)
+
+      return {
+        symbol: p.symbol,
+        position: positionSize,
+        side,
+        leverage: (100 / parseFloat(p.initial_margin_fraction)).toFixed(1) + 'x',
+        avgEntryPrice,
+        markPrice: positionValue / positionSize,
+        positionValue,
+        unrealizedPnl,
+        unrealizedPnlPercent: avgEntryPrice > 0 ? (unrealizedPnl / (positionValue - unrealizedPnl)) * 100 : 0,
+        margin: parseFloat(p.allocated_margin),
+        funding: 0,
+        liquidationPrice: liqPrice > 0 ? liqPrice : null,
+        exchangeId: 'lighter',
+        lastUpdated: Date.now(),
+      }
+    })
 }
 
 export async function fetchLighterOrders(
