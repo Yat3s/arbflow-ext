@@ -1,17 +1,19 @@
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
 import Portfolio from './Portfolio'
+import Portfoliov2 from './Portfoliov2'
 import Settings from './Settings'
 
-type Tab = 'portfolio' | 'settings'
+type Tab = 'portfolio' | 'portfoliov2' | 'settings'
 
 const tabs: { id: Tab; label: string; icon: string }[] = [
-  { id: 'portfolio', label: 'Portfolio', icon: '📊' },
+  { id: 'portfoliov2', label: 'Portfolio', icon: '🔄' },
+  { id: 'portfolio', label: 'Portfolio(old)', icon: '📊' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ]
 
 export const MainOptions = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('portfolio')
+  const [activeTab, setActiveTab] = useState<Tab>('portfoliov2')
 
   return (
     <div className="flex min-h-screen">
@@ -69,6 +71,7 @@ export const MainOptions = () => {
           </svg>
         </button>
         {activeTab === 'portfolio' && <Portfolio />}
+        {activeTab === 'portfoliov2' && <Portfoliov2 />}
         {activeTab === 'settings' && <Settings />}
       </main>
     </div>
