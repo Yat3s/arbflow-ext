@@ -148,6 +148,22 @@ export interface ExchangeConfigs {
 
 export type SiteType = 'lighter' | 'omni' | null
 
+export interface TradeOrder {
+  orderId: string
+  exchange: SiteType
+  symbol: string
+  side: 'buy' | 'sell'
+  orderType: 'market' | 'limit'
+  qty: string
+  price: string
+  status: 'filled' | 'cleared' | 'cancelled' | 'pending' | 'partial'
+  createdAt: number
+  executedAt?: number
+  reduceOnly: boolean
+  filledQty?: string
+  filledValue?: string
+}
+
 export interface ElementInfo {
   exists: boolean
   selector: string

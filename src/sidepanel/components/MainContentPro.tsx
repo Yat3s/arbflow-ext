@@ -4,7 +4,6 @@ import { SYMBOL_MARKET_ID_MAP } from '../../lib/symbols'
 import type { LighterConfig } from '../../lib/types'
 import { useExchanges, useTrade } from '../hooks'
 import { ExchangeCard } from './ExchangeCard'
-import { SettingsDialog } from './SettingsDialog'
 import { StatusToast } from './StatusToast'
 import { SymbolCard } from './SymbolCard'
 
@@ -50,7 +49,6 @@ export function MainContentPro({
     saveLighterConfig,
   })
 
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [status, setStatus] = useState<{ message: string; isSuccess: boolean } | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
@@ -180,7 +178,7 @@ export function MainContentPro({
             {isRefreshing ? '↻...' : '↻'}
           </button>
           <button
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => chrome.runtime.openOptionsPage()}
             className="cursor-pointer rounded px-3 py-1.5 text-sm hover:bg-muted"
           >
             ⚙
@@ -257,15 +255,6 @@ export function MainContentPro({
           </div>
         </section>
       </main>
-
-      <SettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        watchedSymbols={watchedSymbols}
-        onSaveSymbols={saveWatchedSymbols}
-        lighterConfig={lighterConfig}
-        onSaveLighterConfig={handleSaveLighterConfig}
-      />
 
       <StatusToast message={status?.message || null} isSuccess={status?.isSuccess ?? true} />
     </>

@@ -26,7 +26,7 @@ export function useSettings() {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true)
   const [useProMode, setUseProMode] = useState<boolean>(true)
 
-  useEffect(() => {
+  const loadSettings = useCallback(() => {
     const savedSymbols = localStorage.getItem(STORAGE_KEYS.WATCHED_SYMBOLS)
     if (savedSymbols) {
       try {
@@ -82,6 +82,21 @@ export function useSettings() {
       setUseProMode(savedUseProMode === 'true')
     }
   }, [])
+
+  useEffect(() => {
+    loadSettings()
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (
+        e.key === STORAGE_KEYS.WATCHED_SYMBOLS ||
+        e.key === STORAGE_KEYS.EXCHANGE_CONFIGS
+      ) {
+        loadSettings()
+      }
+    }
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
+  }, [loadSettings])
 
   const saveWatchedSymbols = useCallback((symbols: string[]) => {
     setWatchedSymbols(symbols)

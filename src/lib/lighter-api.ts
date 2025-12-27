@@ -1,4 +1,4 @@
-import type { MarketInfo } from './types'
+import type { MarketInfo, TradeOrder } from './types'
 
 export const LIGHTER_BASE_URL = 'https://mainnet.zklighter.elliot.ai'
 export const LIGHTER_WS_URL = 'wss://mainnet.zklighter.elliot.ai/stream'
@@ -702,5 +702,206 @@ export async function createLighterAuthToken(
   }
 
   return token
+}
+
+export interface LighterOrdersResponse {
+  code: number
+  next_cursor?: string
+  orders: LighterRawOrder[]
+}
+
+export interface LighterRawOrder {
+  order_id: string
+  order_index: number
+  client_order_id: string
+  market_index: number
+  owner_account_index: number
+  initial_base_amount: string
+  price: string
+  is_ask: boolean
+  side: string
+  type: 'market' | 'limit'
+  time_in_force: string
+  reduce_only: boolean
+  trigger_price: string
+  status: string
+  filled_base_amount: string
+  filled_quote_amount: string
+  remaining_base_amount: string
+  timestamp: number
+  created_at: number
+  updated_at: number
+  block_height: number
+}
+
+function getSymbolByMarketIndex(marketIndex: number): string {
+  for (const [symbol, info] of Object.entries(LIGHTER_MARKETS)) {
+    if (info.id === marketIndex) return symbol
+  }
+  return `MARKET_${marketIndex}`
+}
+
+function mapLighterOrderStatus(status: string): TradeOrder['status'] {
+  switch (status) {
+    case 'filled':
+      return 'filled'
+    case 'cancelled':
+    case 'canceled':
+      return 'cancelled'
+    case 'partial':
+    case 'partially_filled':
+      return 'partial'
+    case 'open':
+    case 'pending':
+      return 'pending'
+    default:
+      return 'pending'
+  }
+}
+
+function parseLighterOrder(order: LighterRawOrder): TradeOrder {
+  const symbol = getSymbolByMarketIndex(order.market_index)
+  const market = LIGHTER_MARKETS[symbol]
+  const priceDecimals = market?.priceDecimals ?? 4
+  const sizeDecimals = market?.sizeDecimals ?? 2
+
+  const price = parseFloat(order.filled_quote_amount) / parseFloat(order.filled_base_amount || '1')
+
+  return {
+    orderId: order.order_id,
+    exchange: 'lighter',
+    symbol,
+    side: order.is_ask ? 'sell' : 'buy',
+    orderType: order.type,
+    qty: order.initial_base_amount,
+    price: price.toFixed(priceDecimals),
+    status: mapLighterOrderStatus(order.status),
+    createdAt: order.created_at * 1000,
+    executedAt: order.updated_at ? order.updated_at * 1000 : undefined,
+    reduceOnly: order.reduce_only,
+    filledQty: order.filled_base_amount,
+    filledValue: order.filled_quote_amount,
+  }
+}
+
+export interface FetchLighterOrdersOptions {
+  accountIndex: number
+  apiPrivateKey: string
+  apiKeyIndex: number
+  limit?: number
+  cursor?: string
+  askFilter?: -1 | 0 | 1
+  marketId?: number
+  startTime?: number
+  endTime?: number
+  status?: 'filled' | 'cancelled' | 'pending' | 'partial'
+}
+
+async function fetchLighterOrdersPage(
+  authToken: string,
+  accountIndex: number,
+  limit: number,
+  cursor?: string,
+  askFilter: number = -1,
+  marketId?: number
+): Promise<LighterOrdersResponse | null> {
+  const url = new URL(`${LIGHTER_BASE_URL}/api/v1/accountInactiveOrders`)
+  url.searchParams.set('account_index', accountIndex.toString())
+  url.searchParams.set('ask_filter', askFilter.toString())
+  url.searchParams.set('limit', limit.toString())
+
+  if (cursor) {
+    url.searchParams.set('cursor', cursor)
+  }
+  if (marketId !== undefined) {
+    url.searchParams.set('market_id', marketId.toString())
+  }
+
+  const response = await fetch(url.toString(), {
+    headers: { authorization: authToken },
+  })
+  if (!response.ok) return null
+
+  const data: LighterOrdersResponse = await response.json()
+  if (data.code !== 200) return null
+
+  return data
+}
+
+export async function fetchLighterOrders(
+  options: FetchLighterOrdersOptions
+): Promise<{ orders: TradeOrder[]; nextCursor?: string } | null> {
+  const {
+    accountIndex,
+    apiPrivateKey,
+    apiKeyIndex,
+    limit,
+    cursor,
+    askFilter = -1,
+    marketId,
+    startTime,
+    endTime,
+    status = 'filled',
+  } = options
+
+  try {
+    const authToken = await createLighterAuthToken(apiPrivateKey, apiKeyIndex, accountIndex)
+
+    if (!startTime && !endTime) {
+      const data = await fetchLighterOrdersPage(authToken, accountIndex, limit ?? 20, cursor, askFilter, marketId)
+      if (!data) return null
+
+      let orders = data.orders.map(parseLighterOrder)
+      if (status) {
+        orders = orders.filter((o) => o.status === status)
+      }
+
+      return {
+        orders,
+        nextCursor: data.next_cursor,
+      }
+    }
+
+    const allOrders: LighterRawOrder[] = []
+    let currentCursor: string | undefined = cursor
+    let reachedEnd = false
+    const maxPages = 100
+
+    for (let page = 0; page < maxPages && !reachedEnd; page++) {
+      const data = await fetchLighterOrdersPage(authToken, accountIndex, 100, currentCursor, askFilter, marketId)
+      if (!data || data.orders.length === 0) break
+
+      for (const order of data.orders) {
+        const orderTime = order.created_at * 1000
+
+        if (endTime && orderTime > endTime) {
+          continue
+        }
+
+        if (startTime && orderTime < startTime) {
+          reachedEnd = true
+          break
+        }
+
+        allOrders.push(order)
+      }
+
+      if (!data.next_cursor) break
+      currentCursor = data.next_cursor
+    }
+
+    let orders = allOrders.map(parseLighterOrder)
+    if (status) {
+      orders = orders.filter((o) => o.status === status)
+    }
+
+    return {
+      orders,
+      nextCursor: currentCursor,
+    }
+  } catch (e) {
+    console.error('[Arbflow] Failed to fetch Lighter orders:', e)
+    return null
+  }
 }
 
