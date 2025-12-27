@@ -460,7 +460,7 @@ export function MainContentFree() {
       </div>
 
       <div className="text-center text-xs text-muted-foreground">
-        Arfblow v{chrome.runtime.getManifest().version}
+        Arbflow v{chrome.runtime.getManifest().version}
       </div>
     </main>
   )

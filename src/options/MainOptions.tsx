@@ -47,7 +47,27 @@ export const MainOptions = () => {
         </div>
       </aside>
 
-      <main className="flex-1 bg-background">
+      <main className="relative flex-1 bg-background">
+        <button
+          onClick={() => window.close()}
+          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          title="Close"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+        </button>
         {activeTab === 'portfolio' && <Portfolio />}
         {activeTab === 'settings' && <Settings />}
       </main>
